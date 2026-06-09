@@ -8,11 +8,130 @@ Bot Discord yang dirancang untuk mengorganisir dan menjalankan game Werewolf di 
 
 ## Fitur (Roadmap)
 
-- [ ] Command untuk memulai game
-- [ ] Role assignment (villager, werewolf, seer)
-- [ ] Vote system untuk eliminasi
-- [ ] Day/Night cycle management
-- [ ] Game statistics
+### 1. Struktur Data *In-Memory (The Brain)*
+
+Pusat kendali permainan berada di dalam satu *global object/dictionary* di dalam memori bot. Setiap entitas harus dilacak (*track*) menggunakan ID Discord mereka. 
+
+**Contoh representasi logika data:**
+```json
+{
+  "game_active": true,
+  "phase": "night", 
+  "day_count": 1,
+  "channels": {
+    "category_id": "123456",
+    "global_chat": "111",
+    "ww_chat": "222",
+    "graveyard": "333",
+    "voice_lobby": "444"
+  },
+  "players": {
+    "user_id_A": {"role": "villager", "status": "alive", "is_muted": false},
+    "user_id_B": {"role": "werewolf", "status": "alive", "is_muted": false},
+    "user_id_C": {"role": "seer", "status": "dead", "is_muted": true}
+  },
+  "night_actions": {
+    "werewolf_votes": {"target_id": 2}, 
+    "seer_check": "user_id_A"
+  }
+}
+```
+
+**Tasks:**
+- [x] Buat global game state object di memori
+- [x] Implement fungsi untuk initialize/reset game state
+- [x] Struktur ini wajib dikosongkan sepenuhnya setiap kali `game_active` berubah menjadi `false`
+
+### 2. Topologi Saluran & Penimpaan Izin (*Permission Overrides*)
+
+Bot membutuhkan hak akses administrator untuk menimpa (*override*) izin saluran secara dinamis.
+
+**Setup saluran otomatis saat permainan dimulai:**
+
+- **`#setup-cmd`**: 
+  - [ ] Hanya bot dan Host (pemicu `/start`)
+  - [ ] Menampilkan log progress permainan
+
+- **`#global-chat`**:
+  - [ ] **Siang:** `Send Messages: TRUE` untuk pemain hidup, `Attach Files / Embeds: FALSE`
+  - [ ] **Malam:** `Send Messages: FALSE`
+  - [ ] **Pemain Mati/Spectator:** `View Channel: TRUE`, `Send Messages: FALSE`
+
+- **`#werewolf-pact`**:
+  - [x] Hanya visible untuk pemain dengan role Werewolf
+  - [ ] Komunikasi bebas sepanjang waktu
+
+- **`#graveyard`**:
+  - [x] Hidden default untuk pemain hidup
+  - [ ] Terbuka untuk pemain dead dan spectator
+
+- **`Voice - Town Square`**:
+  - [x] Semua pemain wajib di saluran ini
+  - [ ] Fungsi *server-mute* diatur melalui bot
+
+### 3. Alur Permainan & Mesin Status (*State Machine / The Engine*)
+
+**State 0: Inisialisasi (`/start_game`)**
+- [x] Bot memindai pemain di `Voice - Town Square`
+- [x] Filter bot lain dan penonton
+- [x] Validasi minimum pemain (default: 5 orang)
+- [ ] Hitung persentase peran & acak susunan ID pemain
+- [ ] Tetapkan peran ke dalam RAM
+- [ ] Kirim pesan Ephemeral pada channel `#global-chat` ke setiap pemain: "Peran Anda: [ROLE]. Tujuan Anda: [WIN_CONDITION]."
+- [x] Transisi ke State 1: Night Phase
+
+**State 1: Fase Malam (Eksekusi Aksi)**
+- [ ] Apply *server-mute* ke seluruh pemain di voice channel
+- [ ] Kunci `#global-chat`
+- [ ] Kirim UI Menu Dropdown Ephemeral ke peran aktif (WW, Seer, dll)
+- [ ] Dropdown berisi daftar pemain hidup dari RAM
+- [ ] **Timer berjalan** (default: 60 detik)
+- [ ] Jika WW tidak pilih hingga timeout → skip aksi pembunuhan
+- [ ] Kalkulasi hasil (tentukan korban)
+- [ ] Transisi ke State 2: Day Phase
+
+**State 2: Fase Siang (Diskusi & Eksekusi)**
+- [ ] Cabut *server-mute* dari pemain hidup (tetap mute untuk dead)
+- [ ] Buka kembali `#global-chat`
+- [ ] Umumkan siapa yang gugur (tanpa sebutkan peran)
+- [ ] Update RAM: Status korban → `dead`, akses → `#graveyard`
+- [ ] **Timer Diskusi berjalan** (default: 3-5 menit)
+- [ ] Setelah diskusi: Menu Dropdown untuk **Voting** (semua pemain memberikan suara)
+- [ ] Suara mayoritas menentukan target eksekusi (status → `dead` → `#graveyard`)
+- [ ] Periksa Win Condition
+  - [ ] Jika tidak ada pemenang → kembali ke State 1
+  - [ ] Jika ada pemenang → ke State 3
+
+**State 3: Akhir Permainan (Kalkulasi & Pembersihan)**
+- [ ] Trigger jika: Seluruh WW gugur (Villager Win), WW ≥ Villager (WW Win), atau Voice Channel kosong (Game Cancelled)
+- [ ] Kirim embed besar di `#global-chat` dengan rekapitulasi lengkap
+- [ ] Cabut *server-mute* dari semua pengguna untuk diskusi pasca-game
+- [ ] Setelah beberapa menit: Purge `#global-chat` dan `#graveyard`
+- [ ] Reset RAM dan siap untuk permainan baru
+
+### 4. Mitigasi Kasus Ekstrem (*Edge Case Mitigation / The Armor*)
+
+**Event Listeners:**
+
+- [ ] **`on_voice_state_update`** (KRUSIAL):
+  - Logika: Jika game `active` dan user masuk ke voice channel
+  - Cek di RAM apakah user terdaftar sebagai pemain hidup
+  - Jika tidak → apply *server-mute*
+  - Jika yes tapi fase malam → tetap *server-mute*
+  - Jika mid-joiner → anggap sebagai spectator dengan mute
+
+- [ ] **`on_member_disconnect`**:
+  - Jika pemain disconnect selama game → anggap no action/forfeit
+  - Jika voice channel jadi kosong → cancel game
+
+**Commands (Recovery/Debugging):**
+
+- [ ] `/cekrole` - Tampilkan peran pemain (ephemeral message)
+- [ ] `/action` - Fetch dropdown UI ulang jika message corrupt/refresh
+
+**Fitur Tambahan:**
+- [ ] Game statistics & leaderboard (optional)
+- [ ] Replay/log permainan untuk archive
 
 ## Setup
 
