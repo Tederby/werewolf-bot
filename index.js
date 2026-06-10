@@ -257,11 +257,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
             }
           }
 
-          const categoryId = gameState.channels.category_id;
-          if (categoryId) {
-            const childChannels = guild.channels.cache.filter(c => c.parentId === categoryId);
-            for (const [, c] of childChannels) await c.delete('Vote stop').catch(() => null);
-            await guild.channels.cache.get(categoryId)?.delete('Vote stop').catch(() => null);
+          const gameChIds = [gameState.channels.global_chat, gameState.channels.ww_chat, gameState.channels.graveyard];
+          for (const id of gameChIds) {
+            if (!id) continue;
+            const c = guild.channels.cache.get(id);
+            if (c) await c.delete('Vote stop').catch(() => null);
           }
           resetGame();
           await ch?.send({ embeds: [{ color: 0x808080, title: '🛑 Permainan Dihentikan', description: 'Dihentikan melalui voting anggota.', timestamp: new Date().toISOString() }] });

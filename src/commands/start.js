@@ -129,12 +129,19 @@ export async function launchGame(interaction, guild, vcMembers) {
       return interaction.editReply('❌ Konfigurasi peran tidak valid untuk jumlah pemain saat ini. Gunakan `/config auto`.');
     }
 
-    // ── Buat Category sementara ───────────────────────────────────────────
-    const category = await guild.channels.create({ name: '⚔️ Werewolf — Active Game', type: ChannelType.GuildCategory });
+    // ── Ambil kategori & VC permanen dari server config ────────────────────
+    const guildCfg = await getGuildConfig(guild.id);
+    const categoryId = guildCfg?.setup_category_id;
+    const voiceLobbyId = guildCfg?.town_square_id;
 
-    // ── #global-chat ──────────────────────────────────────────────────────
+    if (!categoryId) {
+      gameState.phase = 'lobby';
+      return interaction.editReply('❌ Kategori Werewolf tidak ditemukan. Jalankan `/setup-werewolf` ulang.');
+    }
+
+    // ── Buat 3 channel game sementara di dalam kategori permanen ───────────
     const globalChat = await guild.channels.create({
-      name: 'global-chat', type: ChannelType.GuildText, parent: category.id,
+      name: 'global-chat', type: ChannelType.GuildText, parent: categoryId,
       topic: '💬 Diskusi umum. Aktif saat Fase Siang.',
       permissionOverwrites: [
         { id: everyoneRole.id, allow: [PermissionFlagsBits.ViewChannel], deny: [PermissionFlagsBits.SendMessages, PermissionFlagsBits.AttachFiles] },
@@ -142,9 +149,8 @@ export async function launchGame(interaction, guild, vcMembers) {
       ],
     });
 
-    // ── #werewolf-pact (private) ──────────────────────────────────────────
     const wwChat = await guild.channels.create({
-      name: 'werewolf-pact', type: ChannelType.GuildText, parent: category.id,
+      name: 'werewolf-pact', type: ChannelType.GuildText, parent: categoryId,
       topic: '🩸 Saluran rahasia para Werewolf.',
       permissionOverwrites: [
         { id: everyoneRole.id, deny: [PermissionFlagsBits.ViewChannel] },
@@ -152,9 +158,8 @@ export async function launchGame(interaction, guild, vcMembers) {
       ],
     });
 
-    // ── #graveyard (private) ──────────────────────────────────────────────
     const graveyard = await guild.channels.create({
-      name: 'graveyard', type: ChannelType.GuildText, parent: category.id,
+      name: 'graveyard', type: ChannelType.GuildText, parent: categoryId,
       topic: '⚰️ Khusus jiwa yang telah gugur.',
       permissionOverwrites: [
         { id: everyoneRole.id, deny: [PermissionFlagsBits.ViewChannel] },
@@ -162,16 +167,14 @@ export async function launchGame(interaction, guild, vcMembers) {
       ],
     });
 
-    // ── Voice Channel ─────────────────────────────────────────────────────
-    const voiceLobby = await guild.channels.create({
-      name: '🔊 Town Square', type: ChannelType.GuildVoice, parent: category.id,
-      permissionOverwrites: [
-        { id: everyoneRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] },
-      ],
+    // ── Simpan channel IDs ke gameState (category & VC dari config) ────────
+    setChannels({
+      category_id : categoryId,
+      global_chat : globalChat.id,
+      ww_chat     : wwChat.id,
+      graveyard   : graveyard.id,
+      voice_lobby : voiceLobbyId ?? null,
     });
-
-    // ── Simpan channel IDs ke gameState ───────────────────────────────────
-    setChannels({ category_id: category.id, global_chat: globalChat.id, ww_chat: wwChat.id, graveyard: graveyard.id, voice_lobby: voiceLobby.id });
 
     // ── Aktifkan game ─────────────────────────────────────────────────────
     activateGame();
@@ -182,7 +185,6 @@ export async function launchGame(interaction, guild, vcMembers) {
     let idx = 0;
     for (let i = 0; i < roles.werewolves; i++) {
       setPlayer(shuffled[idx].id, { role: 'werewolf' });
-      // Beri akses ke #werewolf-pact
       await wwChat.permissionOverwrites.edit(shuffled[idx].id, {
         ViewChannel: true, SendMessages: true,
       });
@@ -229,7 +231,7 @@ export async function launchGame(interaction, guild, vcMembers) {
     });
 
     await interaction.editReply(
-      `✅ **Permainan dimulai!**\nArena: **${category.name}**\n📢 <#${globalChat.id}> | ⚰️ <#${graveyard.id}>`
+      `✅ **Permainan dimulai!**\n📢 <#${globalChat.id}> | ⚰️ <#${graveyard.id}>`
     );
 
     console.log(`[/start] Game launched | Guild: ${guild.id} | Players: ${count}`);

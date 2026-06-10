@@ -89,7 +89,6 @@ export async function execute(interaction) {
 
 /** Jalankan stop: hapus channel game + reset state. */
 async function performStop(interaction, guild) {
-  const categoryId = gameState.channels.category_id;
   const phaseBefore = gameState.phase;
 
   try {
@@ -97,11 +96,16 @@ async function performStop(interaction, guild) {
     cleanupTimers();
     cleanupLynchVote();
 
-    // Hapus channel sementara (hanya jika game sudah pernah dilaunch)
-    if (categoryId) {
-      const childChannels = guild.channels.cache.filter(ch => ch.parentId === categoryId);
-      for (const [, ch] of childChannels) await ch.delete('Game stopped').catch(() => null);
-      await guild.channels.cache.get(categoryId)?.delete('Game stopped').catch(() => null);
+    // Hapus hanya 3 channel game sementara (BUKAN kategori, setup-cmd, atau voice)
+    const gameChannelIds = [
+      gameState.channels.global_chat,
+      gameState.channels.ww_chat,
+      gameState.channels.graveyard,
+    ];
+    for (const id of gameChannelIds) {
+      if (!id) continue;
+      const ch = guild.channels.cache.get(id);
+      if (ch) await ch.delete('Game stopped').catch(() => null);
     }
 
     // Unmute semua pemain di VC sebelum reset
