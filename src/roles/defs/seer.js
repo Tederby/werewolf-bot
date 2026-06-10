@@ -2,7 +2,8 @@
  * seer.js — Role Definition: Seer 🔮
  *
  * Aksi malam: Menerawang satu pemain untuk melihat role-nya.
- * Resolve: Kirim hasil terawang secara ephemeral (private) ke Seer.
+ * UI: Ephemeral dropdown di #global-chat (via tombol generic "Gunakan Kemampuan").
+ * Resolve: Hasil terawang dikirim via DM setelah fajar.
  * Tim: Village
  * Win Condition: Semua Werewolf tereliminasi.
  *
@@ -24,25 +25,24 @@ registerRole({
   team         : 'village',
   winCondition : 'Semua Werewolf berhasil dieliminasi.',
   hasNightAction: true,
-  priority     : 50, // Resolve sebelum WW kill — hasilnya berdasarkan kondisi saat malam
+  priority     : 50, // Resolve sebelum WW kill
+
+  // Seer TIDAK pakai sendActionUI (tidak kirim ke channel sendiri).
+  // Sebaliknya, pakai buildActionComponents yang dikirim secara ephemeral
+  // oleh engine saat pemain menekan tombol "Gunakan Kemampuan" di #global-chat.
+  sendActionUI: null,
 
   /**
-   * Kirim UI dropdown ephemeral ke Seer di #global-chat.
-   * @param {import('discord.js').Client} client
+   * Bangun komponen UI untuk dikirim secara EPHEMERAL ke pemain Seer.
+   * Dipanggil oleh interaction handler saat Seer menekan tombol "Gunakan Kemampuan".
+   *
+   * @param {import('discord.js').Guild} guild
+   * @param {string} actorId - User ID Seer
+   * @returns {Promise<{ embeds: Object[], components: Object[] }>}
    */
-  async sendActionUI(client) {
-    const globalChat = client.channels.cache.get(gameState.channels.global_chat);
-    if (!globalChat) return;
-
+  async buildActionComponents(guild, actorId) {
     const alivePlayers = getAlivePlayers();
-    const seerPlayer = alivePlayers.find(p => p.data.role === 'seer');
-    if (!seerPlayer) return;
-
-    const guild = client.guilds.cache.get(gameState.guild_id);
-
-    // Target = semua pemain hidup kecuali Seer sendiri
-    const targets = alivePlayers.filter(p => p.id !== seerPlayer.id);
-    if (targets.length === 0) return;
+    const targets = alivePlayers.filter(p => p.id !== actorId);
 
     const options = await Promise.all(
       targets.map(async (p) => {
@@ -64,34 +64,22 @@ registerRole({
 
     const row = new ActionRowBuilder().addComponents(select);
 
-    // Kirim DM ke Seer (bukan di channel)
-    try {
-      const seerMember = await guild.members.fetch(seerPlayer.id);
-      await seerMember.send({
-        embeds: [{
-          color       : 0x9b59b6,
-          title       : `🔮 Malam Hari ${gameState.day_count} — Waktunya Menerawang`,
-          description : `Seer, pilih satu pemain untuk diterawang.\n\n⏱️ Kamu punya **60 detik**. Jika tidak memilih, kamu melewatkan giliran.`,
-          footer      : { text: 'Hasil terawang akan dikirim setelah fajar.' },
-          timestamp   : new Date().toISOString(),
-        }],
-        components: [row],
-      });
-    } catch (err) {
-      console.error(`[Seer] Gagal kirim DM ke Seer ${seerPlayer.id}:`, err.message);
-      // Fallback: kirim sebagai pesan biasa di global-chat (hanya visible ke seer)
-      // Untuk saat ini, log saja errornya
-    }
+    return {
+      embeds: [{
+        color       : 0x9b59b6,
+        title       : `🔮 Malam Hari ${gameState.day_count} — Waktunya Menerawang`,
+        description : 'Pilih satu pemain untuk diterawang.\n\n⏱️ Kamu punya waktu terbatas. Jika tidak memilih, kamu melewatkan giliran.',
+        footer      : { text: 'Hanya kamu yang melihat pesan ini. Hasil dikirim setelah fajar.' },
+        timestamp   : new Date().toISOString(),
+      }],
+      components: [row],
+    };
   },
 
   /**
    * Resolve aksi reveal seer.
    * Seer melihat role target BERDASARKAN kondisi saat malam
    * (sebelum kill WW dieksekusi), jadi target tetap terlihat hidup.
-   *
-   * @param {import('../nightActions.js').NightAction} action
-   * @param {{ protectedIds: Set<string>, gameState: Object }} ctx
-   * @returns {import('../nightActions.js').NightResult[]}
    */
   resolveAction(action, ctx) {
     const { gameState: gs } = ctx;

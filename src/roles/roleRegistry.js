@@ -22,7 +22,10 @@
  * @property {string}   winCondition - Deskripsi kondisi menang
  * @property {boolean}  hasNightAction - Apakah punya aksi malam
  * @property {number}   priority    - Urutan resolve (rendah = duluan). WW=100, Guardian=10, Seer=50
- * @property {Function|null} sendActionUI   - Fungsi kirim dropdown/UI ke pemain
+ * @property {Function|null} sendActionUI        - Kirim UI ke channel khusus role (misal WW ke #werewolf-pact)
+ * @property {Function|null} buildActionComponents - Return {embeds, components} untuk dikirim EPHEMERAL di #global-chat.
+ *                                                   Dipanggil saat pemain menekan tombol "Gunakan Kemampuan Malam".
+ *                                                   Signature: async (guild, actorId) => { embeds: [], components: [] }
  * @property {Function|null} resolveAction  - Fungsi resolve aksi saat dawn
  */
 

@@ -15,7 +15,7 @@
  *  8. Cek win condition setiap transisi
  */
 
-import { PermissionFlagsBits } from 'discord.js';
+import { PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { gameState, getAlivePlayers, setPlayer } from '../gameState.js';
 import {
   getNightActionRoles, getRole, resolveNight, resetNightActions,
@@ -74,21 +74,47 @@ export async function startNightPhase(client) {
 
   // 5. Kirim UI aksi malam ke setiap role yang punya night action
   const nightRoles = getNightActionRoles();
+  let hasEphemeralRoles = false;
+
   for (const roleDef of nightRoles) {
-    // Pastikan ada pemain hidup dengan role ini
     const hasActor = getAlivePlayers().some(p => p.data.role === roleDef.name);
     if (!hasActor) continue;
 
-    try {
-      if (roleDef.sendActionUI) {
+    // Role dengan channel sendiri (misal: werewolf → #werewolf-pact)
+    if (roleDef.sendActionUI) {
+      try {
         await roleDef.sendActionUI(client);
+      } catch (err) {
+        console.error(`[Engine] Error sending night UI for ${roleDef.name}:`, err);
       }
-    } catch (err) {
-      console.error(`[Engine] Error sending night UI for ${roleDef.name}:`, err);
+    }
+
+    // Role yang pakai ephemeral di #global-chat (misal: seer, guardian angel, dll)
+    if (roleDef.buildActionComponents) {
+      hasEphemeralRoles = true;
     }
   }
 
-  // 6. Pasang Force-Next Timer (anti-AFK softlock)
+  // 6. Jika ada role yang pakai ephemeral, kirim tombol generic di #global-chat
+  if (hasEphemeralRoles && globalChat) {
+    const actionButton = new ButtonBuilder()
+      .setCustomId('night:action')
+      .setLabel('🎭 Gunakan Kemampuan Malam')
+      .setStyle(ButtonStyle.Primary);
+    const actionRow = new ActionRowBuilder().addComponents(actionButton);
+
+    await globalChat.send({
+      embeds: [{
+        color       : 0x9b59b6,
+        title       : '🎭 Kemampuan Khusus',
+        description : 'Pemain dengan kemampuan khusus, tekan tombol di bawah untuk menggunakannya.\n\n*Jika kamu hanya Villager biasa, tombol ini bukan untukmu. Tidurlah dengan tenang.*',
+        footer      : { text: 'Aksimu bersifat rahasia — hanya kamu yang melihat hasilnya.' },
+      }],
+      components: [actionRow],
+    });
+  }
+
+  // 7. Pasang Force-Next Timer (anti-AFK softlock)
   clearTimeout(nightTimer);
   nightTimer = setTimeout(async () => {
     console.log('[Engine] Night timer expired — forcing dawn.');

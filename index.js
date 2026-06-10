@@ -26,7 +26,7 @@ import { gameState, clearVote } from './src/gameState.js';
 import { launchGame, buildVoteEmbed, buildVoteRow } from './src/commands/start.js';
 
 // ── Role System (auto-registers all roles on import) ──────────────────────
-import './src/roles/index.js';
+import { getRole } from './src/roles/index.js';
 import { submitAction, hasSubmitted } from './src/roles/nightActions.js';
 import { onNightActionReceived } from './src/engine/phaseEngine.js';
 import { castLynchVote } from './src/engine/lynchVote.js';
@@ -122,6 +122,53 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (prefix === 'test') {
       await testCmd.handleTestButton(interaction, type);
       return;
+    }
+
+    // ── Night Action Button (ephemeral ability UI) ─────────────────────────
+    if (prefix === 'night' && type === 'action') {
+      if (gameState.phase !== 'night') {
+        return interaction.reply({ content: '⚠️ Bukan fase malam.', ephemeral: true });
+      }
+      const player = gameState.players[interaction.user.id];
+      if (!player || player.status !== 'alive') {
+        return interaction.reply({ content: '⚠️ Kamu bukan pemain aktif.', ephemeral: true });
+      }
+
+      const roleDef = getRole(player.role);
+
+      // Werewolf: arahkan ke #werewolf-pact
+      if (player.role === 'werewolf') {
+        const wwChId = gameState.channels.ww_chat;
+        return interaction.reply({
+          content: `🐺 Gunakan channel <#${wwChId}> untuk memilih mangsa.`,
+          ephemeral: true,
+        });
+      }
+
+      // Role tanpa kemampuan malam (villager)
+      if (!roleDef?.buildActionComponents) {
+        return interaction.reply({
+          content: '😴 Kamu tidak punya kemampuan khusus. Tidurlah dengan tenang dan tunggu pagi.',
+          ephemeral: true,
+        });
+      }
+
+      // Cek apakah role ini sudah submit
+      if (hasSubmitted(player.role)) {
+        return interaction.reply({
+          content: '✅ Kamu sudah menggunakan kemampuanmu malam ini. Tunggu fajar...',
+          ephemeral: true,
+        });
+      }
+
+      // Bangun dan kirim UI secara ephemeral
+      try {
+        const ui = await roleDef.buildActionComponents(interaction.guild, interaction.user.id);
+        return interaction.reply({ ...ui, ephemeral: true });
+      } catch (err) {
+        console.error(`[Router] Error building action UI for ${player.role}:`, err);
+        return interaction.reply({ content: '❌ Terjadi error saat menyiapkan UI.', ephemeral: true });
+      }
     }
 
     if (prefix !== 'vote') return;
