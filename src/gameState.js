@@ -140,3 +140,15 @@ export function getAlivePlayers() {
     .filter(([, d]) => d.status === 'alive')
     .map(([id, data]) => ({ id, data }));
 }
+
+export function getDeadPlayers() {
+  return Object.entries(gameState.players)
+    .filter(([, d]) => d.status === 'dead')
+    .map(([id, data]) => ({ id, data }));
+}
+
+export function getPlayersByRole(role) {
+  return Object.entries(gameState.players)
+    .filter(([, d]) => d.role === role && d.status === 'alive')
+    .map(([id, data]) => ({ id, data }));
+}

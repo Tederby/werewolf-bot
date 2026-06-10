@@ -66,14 +66,22 @@ export async function execute(interaction) {
 
   // ── /config show ──────────────────────────────────────────────────────────
   if (sub === 'show') {
-    const cfg  = gameState.session_config;
-    const roles = cfg.role_mode === 'auto'
+    const cfg        = gameState.session_config;
+    const roles      = cfg.role_mode === 'auto'
       ? calculateAutoRoles(playerCount)
       : calculateCustomRoles(playerCount, cfg.werewolves, cfg.seers);
+    const roleSummary = formatRoleSummary(roles);
+
+    // Ambil data host & VC untuk embed yang identik dengan /setup
+    const hostUser   = await interaction.guild.members.fetch(gameState.host_id);
+    const vc         = hostUser.voice?.channel ?? { name: '—' };
+    const vcMembers  = vc.members
+      ? [...vc.members.values()].filter(m => !m.user.bot)
+      : [];
+    const playerList = vcMembers.map((m, i) => `${i + 1}. <@${m.id}>`).join('\n') || '*(belum ada)*';
 
     return interaction.reply({
-      content: `**Konfigurasi saat ini** (mode: \`${cfg.role_mode}\`)\n\n${formatRoleSummary(roles)}`,
-      ephemeral: true,
+      embeds: [buildLobbyEmbed(hostUser.user, vc, playerList, roleSummary, cfg.role_mode)],
     });
   }
 

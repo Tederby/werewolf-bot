@@ -1,0 +1,20 @@
+{
+  "806433866021076992": {
+    "configured": true,
+    "setup_category_id": "1513817355027742760",
+    "setup_cmd_id": "1513817357468962886",
+    "configured_at": "2026-06-09T08:09:37.868Z",
+    "configured_by": "644318599409827879",
+    "global_chat_id": "1513817359490617394",
+    "ww_pact_id": "1513817361755541574",
+    "graveyard_id": "1513817363601162331",
+    "town_square_id": "1513817366381858946",
+    "bot_config": {
+      "member_role_id": "806436545027899443",
+      "min_players": 5,
+      "night_timer": 60,
+      "day_timer": 3,
+      "vote_threshold": 60
+    }
+  }
+}

@@ -75,39 +75,39 @@ Bot membutuhkan hak akses administrator untuk menimpa (*override*) izin saluran 
 - [x] Bot memindai pemain di `Voice - Town Square`
 - [x] Filter bot lain dan penonton
 - [x] Validasi minimum pemain (default: 5 orang)
-- [ ] Hitung persentase peran & acak susunan ID pemain
-- [ ] Tetapkan peran ke dalam RAM
-- [ ] Kirim pesan Ephemeral pada channel `#global-chat` ke setiap pemain: "Peran Anda: [ROLE]. Tujuan Anda: [WIN_CONDITION]."
+- [x] Hitung persentase peran & acak susunan ID pemain
+- [x] Tetapkan peran ke dalam RAM
+- [x] Kirim pesan Ephemeral (via DM) ke setiap pemain: "Peran Anda: [ROLE]. Tujuan Anda: [WIN_CONDITION]."
 - [x] Transisi ke State 1: Night Phase
 
 **State 1: Fase Malam (Eksekusi Aksi)**
-- [ ] Apply *server-mute* ke seluruh pemain di voice channel
-- [ ] Kunci `#global-chat`
-- [ ] Kirim UI Menu Dropdown Ephemeral ke peran aktif (WW, Seer, dll)
-- [ ] Dropdown berisi daftar pemain hidup dari RAM
-- [ ] **Timer berjalan** (default: 60 detik)
-- [ ] Jika WW tidak pilih hingga timeout → skip aksi pembunuhan
-- [ ] Kalkulasi hasil (tentukan korban)
-- [ ] Transisi ke State 2: Day Phase
+- [x] Apply *server-mute* ke seluruh pemain di voice channel
+- [x] Kunci `#global-chat`
+- [x] Kirim UI Menu Dropdown Ephemeral ke peran aktif (WW, Seer, dll)
+- [x] Dropdown berisi daftar pemain hidup dari RAM
+- [x] **Timer berjalan** (default: 60 detik)
+- [x] Jika WW tidak pilih hingga timeout → skip aksi pembunuhan
+- [x] Kalkulasi hasil (tentukan korban)
+- [x] Transisi ke State 2: Day Phase
 
 **State 2: Fase Siang (Diskusi & Eksekusi)**
-- [ ] Cabut *server-mute* dari pemain hidup (tetap mute untuk dead)
-- [ ] Buka kembali `#global-chat`
-- [ ] Umumkan siapa yang gugur (tanpa sebutkan peran)
-- [ ] Update RAM: Status korban → `dead`, akses → `#graveyard`
-- [ ] **Timer Diskusi berjalan** (default: 3-5 menit)
-- [ ] Setelah diskusi: Menu Dropdown untuk **Voting** (semua pemain memberikan suara)
-- [ ] Suara mayoritas menentukan target eksekusi (status → `dead` → `#graveyard`)
-- [ ] Periksa Win Condition
-  - [ ] Jika tidak ada pemenang → kembali ke State 1
-  - [ ] Jika ada pemenang → ke State 3
+- [x] Cabut *server-mute* dari pemain hidup (tetap mute untuk dead)
+- [x] Buka kembali `#global-chat`
+- [x] Umumkan siapa yang gugur (tanpa sebutkan peran)
+- [x] Update RAM: Status korban → `dead`, akses → `#graveyard`
+- [x] **Timer Diskusi berjalan** (default: 3-5 menit)
+- [x] Setelah diskusi: Menu Dropdown untuk **Voting** (semua pemain memberikan suara)
+- [x] Suara mayoritas menentukan target eksekusi (status → `dead` → `#graveyard`)
+- [x] Periksa Win Condition
+  - [x] Jika tidak ada pemenang → kembali ke State 1
+  - [x] Jika ada pemenang → ke State 3
 
 **State 3: Akhir Permainan (Kalkulasi & Pembersihan)**
-- [ ] Trigger jika: Seluruh WW gugur (Villager Win), WW ≥ Villager (WW Win), atau Voice Channel kosong (Game Cancelled)
-- [ ] Kirim embed besar di `#global-chat` dengan rekapitulasi lengkap
-- [ ] Cabut *server-mute* dari semua pengguna untuk diskusi pasca-game
+- [x] Trigger jika: Seluruh WW gugur (Villager Win), WW ≥ Villager (WW Win), atau Voice Channel kosong (Game Cancelled)
+- [x] Kirim embed besar di `#global-chat` dengan rekapitulasi lengkap
+- [x] Cabut *server-mute* dari semua pengguna untuk diskusi pasca-game
 - [ ] Setelah beberapa menit: Purge `#global-chat` dan `#graveyard`
-- [ ] Reset RAM dan siap untuk permainan baru
+- [x] Reset RAM dan siap untuk permainan baru
 
 ### 4. Mitigasi Kasus Ekstrem (*Edge Case Mitigation / The Armor*)
 

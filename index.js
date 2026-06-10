@@ -19,10 +19,17 @@ import * as setupCmd          from './src/commands/setup.js';
 import * as configCmd         from './src/commands/config.js';
 import * as startCmd          from './src/commands/start.js';
 import * as stopCmd           from './src/commands/stop.js';
+import * as testCmd           from './src/commands/test.js';
 
 import { isGuildSetup }  from './src/utils/serverConfig.js';
 import { gameState, clearVote } from './src/gameState.js';
 import { launchGame, buildVoteEmbed, buildVoteRow } from './src/commands/start.js';
+
+// ── Role System (auto-registers all roles on import) ──────────────────────
+import './src/roles/index.js';
+import { submitAction, hasSubmitted } from './src/roles/nightActions.js';
+import { onNightActionReceived } from './src/engine/phaseEngine.js';
+import { castLynchVote } from './src/engine/lynchVote.js';
 
 dotenv.config();
 
@@ -37,9 +44,9 @@ if (!token || !clientId || !guildId) {
 const commands = new Collection();
 
 // Commands yang BEBAS digunakan tanpa setup-werewolf terlebih dahulu
-const UNGUARDED = new Set(['ping', 'setup-werewolf', 'bot-config']);
+const UNGUARDED = new Set(['ping', 'setup-werewolf', 'bot-config', 'test']);
 
-const allCommands = [pingCmd, setupWerewolfCmd, botConfigCmd, setupCmd, configCmd, startCmd, stopCmd];
+const allCommands = [pingCmd, setupWerewolfCmd, botConfigCmd, setupCmd, configCmd, startCmd, stopCmd, testCmd];
 for (const cmd of allCommands) {
   commands.set(cmd.data.name, cmd);
   console.log(`[Commands] Registered: /${cmd.data.name}`);
@@ -107,9 +114,16 @@ client.on(Events.InteractionCreate, async (interaction) => {
     return;
   }
 
-  // ── Button Interactions (Vote System) ────────────────────────────────────
+  // ── Button Interactions ───────────────────────────────────────────────────
   if (interaction.isButton()) {
     const [prefix, type, action] = interaction.customId.split(':');
+
+    // ── Test Mode Buttons ─────────────────────────────────────────────────
+    if (prefix === 'test') {
+      await testCmd.handleTestButton(interaction, type);
+      return;
+    }
+
     if (prefix !== 'vote') return;
 
     const guild   = interaction.guild;
@@ -181,6 +195,21 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         } else if (type === 'stop') {
           const { resetGame } = await import('./src/gameState.js');
+          const { cleanupTimers: ct } = await import('./src/engine/phaseEngine.js');
+          const { cleanupLynchVote: clv } = await import('./src/engine/lynchVote.js');
+          ct(); clv();
+
+          // Unmute semua pemain
+          const voiceId = gameState.channels.voice_lobby;
+          if (voiceId) {
+            const vc = guild.channels.cache.get(voiceId);
+            if (vc) {
+              for (const [, m] of vc.members) {
+                if (!m.user.bot) await m.voice.setMute(false, 'Vote stop').catch(() => null);
+              }
+            }
+          }
+
           const categoryId = gameState.channels.category_id;
           if (categoryId) {
             const childChannels = guild.channels.cache.filter(c => c.parentId === categoryId);
@@ -191,6 +220,74 @@ client.on(Events.InteractionCreate, async (interaction) => {
           await ch?.send({ embeds: [{ color: 0x808080, title: '🛑 Permainan Dihentikan', description: 'Dihentikan melalui voting anggota.', timestamp: new Date().toISOString() }] });
         }
       }
+    }
+  }
+
+  // ── StringSelectMenu Interactions (Night Actions & Lynch Vote) ────────────
+  if (interaction.isStringSelectMenu()) {
+    const customId = interaction.customId;
+
+    // ── Night Action: Werewolf Kill ─────────────────────────────────────────
+    if (customId === 'night:werewolf:kill') {
+      if (gameState.phase !== 'night') {
+        return interaction.reply({ content: '⚠️ Bukan fase malam.', ephemeral: true });
+      }
+      const player = gameState.players[interaction.user.id];
+      if (!player || player.role !== 'werewolf') {
+        return interaction.reply({ content: '⚠️ Kamu bukan Werewolf.', ephemeral: true });
+      }
+      if (hasSubmitted('werewolf')) {
+        return interaction.reply({ content: '⚠️ Werewolf sudah memilih target malam ini.', ephemeral: true });
+      }
+
+      const targetId = interaction.values[0];
+      submitAction('werewolf', interaction.user.id, targetId);
+
+      await interaction.reply({
+        content: `🐺 Target dikunci: <@${targetId}>. Tunggu fajar...`,
+        ephemeral: true,
+      });
+
+      // Cek apakah semua aksi sudah masuk
+      await onNightActionReceived(interaction.client);
+      return;
+    }
+
+    // ── Night Action: Seer Reveal ────────────────────────────────────────────
+    if (customId === 'night:seer:reveal') {
+      if (gameState.phase !== 'night') {
+        return interaction.reply({ content: '⚠️ Bukan fase malam.', ephemeral: true });
+      }
+      const player = gameState.players[interaction.user.id];
+      if (!player || player.role !== 'seer') {
+        return interaction.reply({ content: '⚠️ Kamu bukan Seer.', ephemeral: true });
+      }
+      if (hasSubmitted('seer')) {
+        return interaction.reply({ content: '⚠️ Kamu sudah menerawang malam ini.', ephemeral: true });
+      }
+
+      const targetId = interaction.values[0];
+      submitAction('seer', interaction.user.id, targetId);
+
+      await interaction.reply({
+        content: `🔮 Kamu menerawang <@${targetId}>. Hasil akan dikirim saat fajar...`,
+        ephemeral: true,
+      });
+
+      await onNightActionReceived(interaction.client);
+      return;
+    }
+
+    // ── Lynch Vote ──────────────────────────────────────────────────────────
+    if (customId === 'lynch:vote') {
+      if (gameState.phase !== 'day') {
+        return interaction.reply({ content: '⚠️ Bukan fase voting.', ephemeral: true });
+      }
+
+      const targetId = interaction.values[0];
+      const result = castLynchVote(interaction.client, interaction.user.id, targetId);
+
+      return interaction.reply({ content: result.message, ephemeral: true });
     }
   }
 });

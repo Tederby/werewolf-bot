@@ -11,6 +11,8 @@ import { gameState, resetGame, clearVote } from '../gameState.js';
 import { getGuildConfig } from '../utils/serverConfig.js';
 import { buildVoteEmbed, buildVoteRow } from './start.js';
 import { requireSetupCmd } from '../utils/channelGuard.js';
+import { cleanupTimers } from '../engine/phaseEngine.js';
+import { cleanupLynchVote } from '../engine/lynchVote.js';
 
 export const data = new SlashCommandBuilder()
   .setName('stop')
@@ -91,11 +93,28 @@ async function performStop(interaction, guild) {
   const phaseBefore = gameState.phase;
 
   try {
+    // Cleanup engine timers
+    cleanupTimers();
+    cleanupLynchVote();
+
     // Hapus channel sementara (hanya jika game sudah pernah dilaunch)
     if (categoryId) {
       const childChannels = guild.channels.cache.filter(ch => ch.parentId === categoryId);
       for (const [, ch] of childChannels) await ch.delete('Game stopped').catch(() => null);
       await guild.channels.cache.get(categoryId)?.delete('Game stopped').catch(() => null);
+    }
+
+    // Unmute semua pemain di VC sebelum reset
+    const voiceChannelId = gameState.channels.voice_lobby;
+    if (voiceChannelId) {
+      const vc = guild.channels.cache.get(voiceChannelId);
+      if (vc) {
+        for (const [, member] of vc.members) {
+          if (!member.user.bot) {
+            await member.voice.setMute(false, 'Game stopped').catch(() => null);
+          }
+        }
+      }
     }
 
     // Kirim notif ke #setup-cmd

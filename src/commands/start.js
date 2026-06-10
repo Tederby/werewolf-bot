@@ -14,10 +14,14 @@ import {
   SlashCommandBuilder, ChannelType, PermissionFlagsBits,
   ActionRowBuilder, ButtonBuilder, ButtonStyle,
 } from 'discord.js';
-import { gameState, activateGame, setChannels, clearVote } from '../gameState.js';
+import { gameState, activateGame, setChannels, setPlayer, clearVote } from '../gameState.js';
 import { getGuildConfig } from '../utils/serverConfig.js';
 import { calculateAutoRoles, calculateCustomRoles } from '../utils/roleCalculator.js';
 import { requireSetupCmd } from '../utils/channelGuard.js';
+
+// ── Role System & Engine ─────────────────────────────────────────────────────
+import { getRole } from '../roles/index.js';
+import { startNightPhase } from '../engine/phaseEngine.js';
 
 export const data = new SlashCommandBuilder()
   .setName('start')
@@ -173,13 +177,53 @@ export async function launchGame(interaction, guild, vcMembers) {
     activateGame();
     clearVote();
 
+    // ── Distribusi role secara acak ──────────────────────────────────────
+    const shuffled = [...vcMembers].sort(() => Math.random() - 0.5);
+    let idx = 0;
+    for (let i = 0; i < roles.werewolves; i++) {
+      setPlayer(shuffled[idx].id, { role: 'werewolf' });
+      // Beri akses ke #werewolf-pact
+      await wwChat.permissionOverwrites.edit(shuffled[idx].id, {
+        ViewChannel: true, SendMessages: true,
+      });
+      idx++;
+    }
+    for (let i = 0; i < roles.seers; i++) {
+      setPlayer(shuffled[idx].id, { role: 'seer' });
+      idx++;
+    }
+    while (idx < shuffled.length) {
+      setPlayer(shuffled[idx].id, { role: 'villager' });
+      idx++;
+    }
+
+    // ── Kirim DM role ke setiap pemain ──────────────────────────────────
+    for (const member of vcMembers) {
+      const playerData = gameState.players[member.id];
+      const roleDef    = getRole(playerData.role);
+      try {
+        await member.send({
+          embeds: [{
+            color       : playerData.role === 'werewolf' ? 0x8b0000 : 0x2ecc71,
+            title       : `${roleDef?.emoji ?? '❓'} Peran Kamu: ${roleDef?.displayName ?? playerData.role}`,
+            description : `**Tim:** ${roleDef?.team === 'werewolf' ? '🐺 Werewolf' : '🏘️ Village'}\n` +
+                          `**Tujuan:** ${roleDef?.winCondition ?? '-'}`,
+            footer      : { text: 'Jangan beritahu siapapun peranmu! 🤫' },
+            timestamp   : new Date().toISOString(),
+          }],
+        });
+      } catch (err) {
+        console.warn(`[/start] Gagal DM ke ${member.user.tag}: ${err.message}`);
+      }
+    }
+
     // ── Pengumuman di #global-chat ─────────────────────────────────────────
     await globalChat.send({
       embeds: [{
         color       : 0x8b0000,
         title       : '🌙 Malam Pertama Telah Tiba...',
-        description : `Permainan dimulai dengan **${count} pemain**.\nDistribusi peran:\n🐺 ${roles.werewolves} Werewolf | 🔮 ${roles.seers} Seer | 👨‍🌾 ${roles.villagers} Villager`,
-        footer      : { text: 'DM dari bot akan segera dikirimkan ke setiap pemain.' },
+        description : `Permainan dimulai dengan **${count} pemain**.\nDistribusi peran:\n🐺 ${roles.werewolves} Werewolf | 🔮 ${roles.seers} Seer | 👨‍🌾 ${roles.villagers} Villager\n\nSetiap pemain telah menerima peran via DM.`,
+        footer      : { text: 'Fase malam dimulai...' },
         timestamp   : new Date().toISOString(),
       }],
     });
@@ -189,6 +233,9 @@ export async function launchGame(interaction, guild, vcMembers) {
     );
 
     console.log(`[/start] Game launched | Guild: ${guild.id} | Players: ${count}`);
+
+    // ── Mulai fase malam pertama ──────────────────────────────────────────
+    await startNightPhase(guild.client);
 
   } catch (err) {
     console.error('[/start] Error:', err);
