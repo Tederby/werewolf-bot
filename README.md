@@ -6,197 +6,106 @@ Discord bot untuk memainkan game minigame Werewolf di server Discord. Bot ini ma
 
 Bot Discord yang dirancang untuk mengorganisir dan menjalankan game Werewolf di channel Discord. Game ini melibatkan pemain yang berperan sebagai villager atau werewolf, dengan tujuan untuk mengidentifikasi dan mengeliminasi werewolf.
 
-## Fitur (Roadmap)
+## Fitur yang Telah Diimplementasikan 🚀
 
-### 1. Struktur Data *In-Memory (The Brain)*
+Bot ini telah memiliki fondasi mesin permainan (*Core Engine*) yang kokoh dan sepenuhnya *playable*:
 
-Pusat kendali permainan berada di dalam satu *global object/dictionary* di dalam memori bot. Setiap entitas harus dilacak (*track*) menggunakan ID Discord mereka. 
+- **🧠 State Manager & Engine Solid**: Siklus permainan terotomatisasi penuh (Lobby → Malam → Fajar → Siang → Voting → Malam). Dilengkapi timer Anti-AFK untuk mencegah *softlock* jika pemain lupa bertindak.
+- **🛡️ Channel & Permission Dinamis**: Membuat dan menghapus kategori beserta saluran khusus (seperti `#global-chat` dan `#graveyard`) secara *on-the-fly*. Sistem ini juga mengamankan jalannya diskusi siang dengan fitur *Auto Server-Mute* berbasis fase dan status hidup/mati pemain.
+- **🎭 Ephemeral UI Night Actions**: Pengalaman UX kelas atas dengan menggunakan sistem *Global Action Button* di server. Aksi malam dilakukan via *dropdown* rahasia (*ephemeral*) tanpa memerlukan *Direct Message* (DM), memecahkan masalah privasi DM tertutup pada Discord.
+- **⚙️ Dynamic Role Registry**: Arsitektur bot sangat *scalable*. Menambah peran baru sangat mudah menggunakan *template* tanpa perlu merusak struktur *engine* utama. Peran saat ini: 🐺 Werewolf, 🔮 Seer, dan 👨‍🌾 Villager.
+- **⚖️ Automated Lynch Vote**: Diskusi siang hari otomatis diakhiri dengan pemungutan suara mayoritas untuk mengeksekusi pemain yang dicurigai.
+- **🤖 E2E Solo Testing Framework**: Mode `/test` rahasia untuk Developer! Mensimulasikan game secara *solo* menggunakan *Virtual Bots*, memungkinkan pengujian peran dan *engine* baru dalam hitungan detik tanpa membutuhkan *alt-account* atau tester lain.
+- **🚧 Edge Case Armor**: Proteksi bawaan terhadap kecurangan. Pemain tidak bisa *unmute* paksa di luar giliran. Bot juga sudah mampu menangani *player* yang mencoba keluar masuk atau *disconnect* di tengah jalannya permainan.
 
-**Contoh representasi logika data:**
-```json
-{
-  "game_active": true,
-  "phase": "night", 
-  "day_count": 1,
-  "channels": {
-    "category_id": "123456",
-    "global_chat": "111",
-    "ww_chat": "222",
-    "graveyard": "333",
-    "voice_lobby": "444"
-  },
-  "players": {
-    "user_id_A": {"role": "villager", "status": "alive", "is_muted": false},
-    "user_id_B": {"role": "werewolf", "status": "alive", "is_muted": false},
-    "user_id_C": {"role": "seer", "status": "dead", "is_muted": true}
-  },
-  "night_actions": {
-    "werewolf_votes": {"target_id": 2}, 
-    "seer_check": "user_id_A"
-  }
-}
-```
+## Ide Fitur & Rencana Kedepan (Roadmap) 🗺️
 
-**Tasks:**
-- [x] Buat global game state object di memori
-- [x] Implement fungsi untuk initialize/reset game state
-- [x] Struktur ini wajib dikosongkan sepenuhnya setiap kali `game_active` berubah menjadi `false`
+Karena *core engine* sudah sangat matang, pengembangan selanjutnya difokuskan pada kedalaman *gameplay* (ekspansi Role) dan fitur komunitas.
 
-### 2. Topologi Saluran & Penimpaan Izin (*Permission Overrides*)
+### 1. Penambahan Peran (Roles) Ekstensif
+Memanfaatkan arsitektur `rolemaker.txt`, fitur paling menarik ke depan adalah menambah berbagai peran baru. Misalkan:
+- [ ] 🛡️ **Guardian Angel / Bodyguard**: Melindungi satu orang setiap malam dari gigitan Werewolf.
+- [ ] 🧙‍♀️ **Witch (Penyihir)**: Memiliki 1 Ramuan Kehidupan dan 1 Ramuan Racun yang hanya bisa dipakai masing-masing satu kali seumur hidup.
+- [ ] 🤡 **Fool / Jester (Neutral)**: Berbeda dari WW atau Village, role ini punya *Win Condition* mandiri, yaitu harus berhasil meyakinkan orang lain untuk mengeksekusinya di siang hari.
+- [ ] 🔫 **Hunter**: Jika mati, ia bisa membawa satu orang lain ke liang lahat bersamanya.
+- [ ] 🐺 **Alpha Werewolf**: Sang bos Werewolf. Akan terdeteksi sebagai *"Villager biasa"* jika diterawang oleh Seer.
+- [ ] ⚖️ **Algoritma Role Balancing (Sistem Poin)**: Seiring bertambah luasnya peran, akan dikembangkan algoritma pembagian role (*auto-role*) yang menggunakan nilai poin (contoh: WW bernilai minus, Village bernilai plus) agar secara otomatis menghasilkan komposisi yang adil dengan menargetkan total poin mendekati 0.
+- Dan lain sebagainya...
 
-Bot membutuhkan hak akses administrator untuk menimpa (*override*) izin saluran secara dinamis.
+### 2. Peningkatan User Experience (UX / QoL)
+- [ ] **UX Interaktif untuk** `/config`: Merombak antarmuka konfigurasi agar lebih nyaman dan rapi, menggunakan menu *Embed* atau *Modal/Dropdown* alih-alih teks biasa.
+- [ ] **Notifikasi**: Menambahkan teks atau gambar *ASCII/GIF* saat pengumuman fajar.
+- [ ] **Bisikan Hantu**: Menambahkan elemen *gameplay* seru di mana pemain di `#graveyard` bisa menebak siapa WW sebenarnya.
+- Dan lain sebagainya...
 
-**Setup saluran otomatis saat permainan dimulai:**
+### 3. Sistem Ekonomi & Database Server
+- [ ] **Database Persisten (MongoDB / SQLite)**: Menghindari kehilangan data jika bot di-*restart* tiba-tiba.
+- [ ] **Leaderboard & Statistik**: Melacak pemain mana yang memiliki rekor kemenangan tertinggi, atau melacak pemain dengan gelar "Paling Sering Terbunuh di Malam Pertama".
+- Dan lain sebagainya...
 
-- **`#setup-cmd`**: 
-  - [ ] Hanya bot dan Host (pemicu `/start`)
-  - [ ] Menampilkan log progress permainan
+## Setup & Instalasi 🛠️
 
-- **`#global-chat`**:
-  - [ ] **Siang:** `Send Messages: TRUE` untuk pemain hidup, `Attach Files / Embeds: FALSE`
-  - [ ] **Malam:** `Send Messages: FALSE`
-  - [ ] **Pemain Mati/Spectator:** `View Channel: TRUE`, `Send Messages: FALSE`
-
-- **`#werewolf-pact`**:
-  - [x] Hanya visible untuk pemain dengan role Werewolf
-  - [ ] Komunikasi bebas sepanjang waktu
-
-- **`#graveyard`**:
-  - [x] Hidden default untuk pemain hidup
-  - [ ] Terbuka untuk pemain dead dan spectator
-
-- **`Voice - Town Square`**:
-  - [x] Semua pemain wajib di saluran ini
-  - [ ] Fungsi *server-mute* diatur melalui bot
-
-### 3. Alur Permainan & Mesin Status (*State Machine / The Engine*)
-
-**State 0: Inisialisasi (`/start_game`)**
-- [x] Bot memindai pemain di `Voice - Town Square`
-- [x] Filter bot lain dan penonton
-- [x] Validasi minimum pemain (default: 5 orang)
-- [x] Hitung persentase peran & acak susunan ID pemain
-- [x] Tetapkan peran ke dalam RAM
-- [x] Kirim pesan Ephemeral (via DM) ke setiap pemain: "Peran Anda: [ROLE]. Tujuan Anda: [WIN_CONDITION]."
-- [x] Transisi ke State 1: Night Phase
-
-**State 1: Fase Malam (Eksekusi Aksi)**
-- [x] Apply *server-mute* ke seluruh pemain di voice channel
-- [x] Kunci `#global-chat`
-- [x] Kirim UI Menu Dropdown Ephemeral ke peran aktif (WW, Seer, dll)
-- [x] Dropdown berisi daftar pemain hidup dari RAM
-- [x] **Timer berjalan** (default: 60 detik)
-- [x] Jika WW tidak pilih hingga timeout → skip aksi pembunuhan
-- [x] Kalkulasi hasil (tentukan korban)
-- [x] Transisi ke State 2: Day Phase
-
-**State 2: Fase Siang (Diskusi & Eksekusi)**
-- [x] Cabut *server-mute* dari pemain hidup (tetap mute untuk dead)
-- [x] Buka kembali `#global-chat`
-- [x] Umumkan siapa yang gugur (tanpa sebutkan peran)
-- [x] Update RAM: Status korban → `dead`, akses → `#graveyard`
-- [x] **Timer Diskusi berjalan** (default: 3-5 menit)
-- [x] Setelah diskusi: Menu Dropdown untuk **Voting** (semua pemain memberikan suara)
-- [x] Suara mayoritas menentukan target eksekusi (status → `dead` → `#graveyard`)
-- [x] Periksa Win Condition
-  - [x] Jika tidak ada pemenang → kembali ke State 1
-  - [x] Jika ada pemenang → ke State 3
-
-**State 3: Akhir Permainan (Kalkulasi & Pembersihan)**
-- [x] Trigger jika: Seluruh WW gugur (Villager Win), WW ≥ Villager (WW Win), atau Voice Channel kosong (Game Cancelled)
-- [x] Kirim embed besar di `#global-chat` dengan rekapitulasi lengkap
-- [x] Cabut *server-mute* dari semua pengguna untuk diskusi pasca-game
-- [ ] Setelah beberapa menit: Purge `#global-chat` dan `#graveyard`
-- [x] Reset RAM dan siap untuk permainan baru
-
-### 4. Mitigasi Kasus Ekstrem (*Edge Case Mitigation / The Armor*)
-
-**Event Listeners:**
-
-- [ ] **`on_voice_state_update`** (KRUSIAL):
-  - Logika: Jika game `active` dan user masuk ke voice channel
-  - Cek di RAM apakah user terdaftar sebagai pemain hidup
-  - Jika tidak → apply *server-mute*
-  - Jika yes tapi fase malam → tetap *server-mute*
-  - Jika mid-joiner → anggap sebagai spectator dengan mute
-
-- [ ] **`on_member_disconnect`**:
-  - Jika pemain disconnect selama game → anggap no action/forfeit
-  - Jika voice channel jadi kosong → cancel game
-
-**Commands (Recovery/Debugging):**
-
-- [ ] `/cekrole` - Tampilkan peran pemain (ephemeral message)
-- [ ] `/action` - Fetch dropdown UI ulang jika message corrupt/refresh
-
-**Fitur Tambahan:**
-- [ ] Game statistics & leaderboard (optional)
-- [ ] Replay/log permainan untuk archive
-
-## Setup
-
-1. Clone repository:
+1. **Clone repository:**
    ```bash
    git clone https://github.com/Tederby/werewolf-bot.git
    cd werewolf-bot
    ```
 
-2. Install dependencies:
+2. **Install dependencies:**
    ```bash
    npm install
    ```
 
-3. Buat file `.env` dengan token bot:
-   ```
+3. **Konfigurasi Environment:**
+   Buat file `.env` di *root directory* dan isi dengan variabel berikut:
+   ```env
    DISCORD_TOKEN=your_bot_token_here
+   DISCORD_CLIENT_ID=your_application_client_id
+   DISCORD_GUILD_ID=your_server_guild_id
    ```
+   *(Catatan: Saat ini bot diatur untuk me-deploy slash commands secara eksklusif ke satu server/guild demi kecepatan update. Pastikan `DISCORD_GUILD_ID` terisi dengan ID Server pengujian).*
 
-4. Setup bot di Discord Developer Portal:
-   - Buka https://discord.com/developers/applications
-   - Buat aplikasi baru atau gunakan yang ada
-   - Tab `Bot` → Copy token ke `.env`
-   - Tab `OAuth2` → URL Generator:
-     - Scope: `bot`
-     - Permissions: `Send Messages`, `Read Messages/View Channels`
-     - Salin URL dan undang bot ke server
+4. **Setup Bot di Discord Developer Portal:**
+   - Buka [Discord Developer Portal](https://discord.com/developers/applications)
+   - Buka tab **Bot** → Copy token ke `.env`.
+   - Aktifkan **Privileged Gateway Intents**:
+     - ✅ Server Members Intent
+     - ✅ Message Content Intent
+   - Buka tab **OAuth2** → **URL Generator**:
+     - **Scopes**: `bot`, `applications.commands`
+     - **Bot Permissions**: 
+       - `Manage Channels` (Krusial untuk membuat arena)
+       - `Manage Roles` & `Manage Permissions` (Krusial untuk kunci channel & *graveyard*)
+       - `Mute Members` (Krusial untuk *Server-Mute* otomatis)
+       - `Send Messages`, `Embed Links`, `Read Messages/View Channels`
+     - Salin URL yang di-generate dan undang bot ke server Anda.
 
-5. Enable Privileged Gateway Intents (di Developer Portal):
-   - ✅ Server Members Intent
-   - ✅ Message Content Intent
-
-6. Jalankan bot:
+5. **Jalankan bot:**
    ```bash
    npm start
    ```
 
-## Testing
+## Testing & Simulasi 🧪
 
-Bot merespon perintah sederhana untuk testing:
-- `ping` → Bot balas `Pong!`
-- `!ping` → Bot balas `Pong! (prefix test)`
-- `/ping` → Bot balas `Pong! (slash test)`
+Bot ini menggunakan sistem **Slash Commands (/)** modern. Anda harus melakukan inisialisasi awal di server Anda terlebih dahulu:
 
-## Development
+1. Ketik `/setup-werewolf` di server. Bot akan membuat kategori konfigurasi otomatis dan *setup channel*.
+2. **E2E Solo Testing Framework:**
+   Jika Anda developer dan ingin menguji siklus permainan tanpa butuh 5 orang lain, gunakan command rahasia:
+   `/test`
+   Bot akan men-generate 5 *Virtual Players* dan memandu Anda step-by-step (Distribusi Role, Fase Malam, Resolusi Fajar, hingga Voting) via tombol UI interaktif!
 
-Console akan menampilkan log setiap message yang diterima:
-```
-Message dari [username]: "pesan_anda"
-```
+## Development 💻
+
+Arsitektur bot ini sepenuhnya *modular*.
+- **`src/engine/`**: Jantung permainan (Phase, Vote, Win Condition).
+- **`src/roles/`**: Registrasi peran. Untuk membuat *role* baru, gunakan kerangka di `src/roles/defs/rolemaker.txt`. Sistem akan mengaitkan *role* baru ke dalam *engine* dan `/test` *framework* secara otomatis.
+- **Console Log**: Berjalan sangat rapi. Akan ada tag `[Engine]`, `[Router]`, atau `[Test]` untuk memudahkan *debugging* siklus permainan.
 
 ## Tech Stack
-
-- Node.js
-- discord.js v14
-- dotenv
+- **Node.js**
+- **discord.js v14**
+- **dotenv**
 
 ## Security
-
-⚠️ **JANGAN** membagikan token bot. Token sudah di-add ke `.gitignore`.
-
-## License
-
-Belum ditentukan
-
-## Kontribusi
-
-Proyek masih dalam tahap awal development.
+⚠️ **JANGAN** membagikan token bot. File `.env` sudah dimasukkan ke dalam `.gitignore`.
