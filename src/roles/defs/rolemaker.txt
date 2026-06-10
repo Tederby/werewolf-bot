@@ -1,0 +1,17 @@
+// Ini adalah template untuk membuat role baru
+
+// src/roles/defs/guardianAngel.js
+registerRole({
+  name: 'guardian_angel',
+  hasNightAction: true,
+  priority: 10,
+  
+  sendActionUI: null, // Tidak perlu channel sendiri
+  
+  async buildActionComponents(guild, actorId) {
+    // Return dropdown untuk pilih siapa yang dilindungi
+    return { embeds: [...], components: [...] };
+  },
+  
+  resolveAction(action, ctx) { ... },
+});

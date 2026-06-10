@@ -12,16 +12,16 @@
 import dotenv from 'dotenv';
 import { Client, GatewayIntentBits, Events, REST, Routes, Collection } from 'discord.js';
 
-import * as pingCmd           from './src/commands/ping.js';
-import * as setupWerewolfCmd  from './src/commands/setup-werewolf.js';
-import * as botConfigCmd      from './src/commands/bot-config.js';
-import * as setupCmd          from './src/commands/setup.js';
-import * as configCmd         from './src/commands/config.js';
-import * as startCmd          from './src/commands/start.js';
-import * as stopCmd           from './src/commands/stop.js';
-import * as testCmd           from './src/commands/test.js';
+import * as pingCmd from './src/commands/ping.js';
+import * as setupWerewolfCmd from './src/commands/setup-werewolf.js';
+import * as botConfigCmd from './src/commands/bot-config.js';
+import * as setupCmd from './src/commands/setup.js';
+import * as configCmd from './src/commands/config.js';
+import * as startCmd from './src/commands/start.js';
+import * as stopCmd from './src/commands/stop.js';
+import * as testCmd from './src/commands/test.js';
 
-import { isGuildSetup }  from './src/utils/serverConfig.js';
+import { isGuildSetup } from './src/utils/serverConfig.js';
 import { gameState, clearVote } from './src/gameState.js';
 import { launchGame, buildVoteEmbed, buildVoteRow } from './src/commands/start.js';
 
@@ -109,7 +109,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       console.error(`[Router] Error /${interaction.commandName}:`, err);
       const msg = { content: '❌ Terjadi kesalahan internal.', ephemeral: true };
       if (interaction.replied || interaction.deferred) await interaction.followUp(msg).catch(() => null);
-      else                                              await interaction.reply(msg).catch(() => null);
+      else await interaction.reply(msg).catch(() => null);
     }
     return;
   }
@@ -173,10 +173,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     if (prefix !== 'vote') return;
 
-    const guild   = interaction.guild;
-    const member  = interaction.member;
-    const userId  = interaction.user.id;
-    const vc      = member.voice?.channel;
+    const guild = interaction.guild;
+    const member = interaction.member;
+    const userId = interaction.user.id;
+    const vc = member.voice?.channel;
 
     // Validasi: user harus di VC untuk vote via button
     if (!vc) {
@@ -190,7 +190,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       if (userId !== gameState.pending_vote.initiator_id && userId !== gameState.host_id) {
         return interaction.reply({ content: '⛔ Hanya inisiator atau host yang bisa membatalkan voting.', ephemeral: true });
       }
-      const ch  = guild.channels.cache.get(gameState.pending_vote.channel_id);
+      const ch = guild.channels.cache.get(gameState.pending_vote.channel_id);
       const msg = ch ? await ch.messages.fetch(gameState.pending_vote.message_id).catch(() => null) : null;
       await msg?.edit({ embeds: [{ color: 0x808080, title: '❌ Voting Dibatalkan', description: `Dibatalkan oleh <@${userId}>.` }], components: [] });
       clearVote();
@@ -208,7 +208,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       gameState.pending_vote.votes.push(userId);
-      const needed  = Math.ceil(vcMembers.length * 0.6);
+      const needed = Math.ceil(vcMembers.length * 0.6);
       const current = gameState.pending_vote.votes.length;
 
       // Update embed
@@ -234,9 +234,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
           // Re-use launchGame by constructing a minimal proxy
           const fakeInteraction = {
             guild,
-            user         : interaction.user,
-            editReply    : async (msg) => ch?.send(typeof msg === 'string' ? msg : msg).catch(() => null),
-            followUp     : async (msg) => ch?.send(typeof msg === 'string' ? msg : msg).catch(() => null),
+            user: interaction.user,
+            editReply: async (msg) => ch?.send(typeof msg === 'string' ? msg : msg).catch(() => null),
+            followUp: async (msg) => ch?.send(typeof msg === 'string' ? msg : msg).catch(() => null),
           };
           await launchGame(fakeInteraction, guild, vcMembers);
 
@@ -335,6 +335,67 @@ client.on(Events.InteractionCreate, async (interaction) => {
       const result = castLynchVote(interaction.client, interaction.user.id, targetId);
 
       return interaction.reply({ content: result.message, ephemeral: true });
+    }
+  }
+});
+
+// ── Voice State Update (Edge Cases Mitigation) ─────────────────────────────
+client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
+  if (gameState.phase === 'idle' || gameState.phase === 'lobby') return;
+  const guild = oldState.guild;
+  const voiceId = gameState.channels.voice_lobby;
+  if (!voiceId) return;
+
+  // 1. User leaving the game's VC
+  if (oldState.channelId === voiceId && newState.channelId !== voiceId) {
+    const vc = oldState.channel;
+    const vcMembers = [...vc.members.values()].filter(m => !m.user.bot);
+
+    if (vcMembers.length === 0) {
+      console.log('[Engine] Voice channel kosong, membatalkan game...');
+      const globalChat = guild.channels.cache.get(gameState.channels.global_chat);
+      if (globalChat) {
+        await globalChat.send({
+          embeds: [{
+            color: 0x808080,
+            title: '🛑 Game Dibatalkan',
+            description: 'Semua pemain telah meninggalkan Voice Channel. Game otomatis dibatalkan.',
+          }]
+        });
+      }
+
+      // Cleanup
+      const { resetGame } = await import('./src/gameState.js');
+      const { cleanupTimers } = await import('./src/engine/phaseEngine.js');
+      const { cleanupLynchVote } = await import('./src/engine/lynchVote.js');
+      cleanupTimers();
+      cleanupLynchVote();
+
+      const categoryId = gameState.channels.category_id;
+      if (categoryId) {
+        const childChannels = guild.channels.cache.filter(c => c.parentId === categoryId);
+        for (const [, c] of childChannels) await c.delete('Voice empty cancel').catch(() => null);
+        await guild.channels.cache.get(categoryId)?.delete('Voice empty cancel').catch(() => null);
+      }
+      resetGame();
+    }
+  }
+
+  // 2. User joining the game's VC
+  else if (oldState.channelId !== voiceId && newState.channelId === voiceId) {
+    const memberId = newState.id;
+    const player = gameState.players[memberId];
+
+    if (!player) {
+      // Bukan pemain -> mute (Spectator)
+      await newState.setMute(true, 'Spectator auto-mute').catch(() => null);
+    } else {
+      // Pemain kembali
+      if (gameState.phase === 'night' || player.status === 'dead') {
+        await newState.setMute(true, 'Rejoin (Night/Dead)').catch(() => null);
+      } else if (gameState.phase === 'day' && player.status === 'alive') {
+        await newState.setMute(false, 'Rejoin (Day alive)').catch(() => null);
+      }
     }
   }
 });

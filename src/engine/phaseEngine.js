@@ -31,8 +31,8 @@ let nightTimer = null;
 let dayTimer = null;
 
 // ── Konfigurasi default (bisa di-override dari bot-config nanti) ──────────
-const NIGHT_DURATION  = 60_000;   // 60 detik
-const DAY_DISCUSSION  = 180_000;  // 3 menit diskusi
+const NIGHT_DURATION = 60_000;   // 60 detik
+const DAY_DISCUSSION = 180_000;  // 3 menit diskusi
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  NIGHT PHASE
@@ -63,11 +63,11 @@ export async function startNightPhase(client) {
   if (globalChat) {
     await globalChat.send({
       embeds: [{
-        color       : 0x1a1a2e,
-        title       : `🌙 Malam Hari ${gameState.day_count}`,
-        description : 'Keheningan menyelimuti desa... Para penduduk tertidur.\nSementara itu, makhluk-makhluk malam mulai beraksi.',
-        footer      : { text: `⏱️ Fase malam berlangsung ${NIGHT_DURATION / 1000} detik.` },
-        timestamp   : new Date().toISOString(),
+        color: 0x1a1a2e,
+        title: `🌙 Malam Hari ${gameState.day_count}`,
+        description: 'Keheningan menyelimuti desa... Para penduduk tertidur.\nSementara itu, makhluk-makhluk malam mulai beraksi.',
+        footer: { text: `⏱️ Fase malam berlangsung ${NIGHT_DURATION / 1000} detik.` },
+        timestamp: new Date().toISOString(),
       }],
     });
   }
@@ -105,10 +105,10 @@ export async function startNightPhase(client) {
 
     await globalChat.send({
       embeds: [{
-        color       : 0x9b59b6,
-        title       : '🎭 Kemampuan Khusus',
-        description : 'Pemain dengan kemampuan khusus, tekan tombol di bawah untuk menggunakannya.\n\n*Jika kamu hanya Villager biasa, tombol ini bukan untukmu. Tidurlah dengan tenang.*',
-        footer      : { text: 'Aksimu bersifat rahasia — hanya kamu yang melihat hasilnya.' },
+        color: 0x9b59b6,
+        title: '🎭 Kemampuan Khusus',
+        description: 'Pemain dengan kemampuan khusus, tekan tombol di bawah untuk menggunakannya.\n\n*Jika kamu hanya Villager biasa, tombol ini bukan untukmu. Tidurlah dengan tenang.*',
+        footer: { text: 'Aksimu bersifat rahasia — hanya kamu yang melihat hasilnya.' },
       }],
       components: [actionRow],
     });
@@ -163,9 +163,9 @@ async function resolveDawn(client) {
   const results = resolveNight();
 
   // 2. Proses hasil: siapa yang mati? siapa yang diterawang?
-  const killed   = [];
-  const reveals  = [];
-  const blocked  = [];
+  const killed = [];
+  const reveals = [];
+  const blocked = [];
 
   for (const result of results) {
     switch (result.type) {
@@ -205,13 +205,13 @@ async function resolveDawn(client) {
 
       await seerMember.send({
         embeds: [{
-          color       : reveal.meta.revealedTeam === 'werewolf' ? 0xe74c3c : 0x2ecc71,
-          title       : '🔮 Hasil Terawang',
-          description : `Kamu menerawang **${targetName}**...\n\n` +
-                        `${revealedRole?.emoji ?? '❓'} Role: **${revealedRole?.displayName ?? reveal.meta.revealedRole}**\n` +
-                        `Tim: **${reveal.meta.revealedTeam === 'werewolf' ? '🐺 Werewolf' : '🏘️ Village'}**`,
-          footer      : { text: 'Informasi ini hanya kamu yang tahu. Gunakan dengan bijak.' },
-          timestamp   : new Date().toISOString(),
+          color: reveal.meta.revealedTeam === 'werewolf' ? 0xe74c3c : 0x2ecc71,
+          title: '🔮 Hasil Terawang',
+          description: `Kamu menerawang **${targetName}**...\n\n` +
+            `${revealedRole?.emoji ?? '❓'} Role: **${revealedRole?.displayName ?? reveal.meta.revealedRole}**\n` +
+            `Tim: **${reveal.meta.revealedTeam === 'werewolf' ? '🐺 Werewolf' : '🏘️ Village'}**`,
+          footer: { text: 'Informasi ini hanya kamu yang tahu. Gunakan dengan bijak.' },
+          timestamp: new Date().toISOString(),
         }],
       });
     } catch (err) {
@@ -253,7 +253,7 @@ export async function startDayPhase(client, killedIds = [], blockedIds = []) {
 
     if (killedIds.length === 0) {
       description = '☀️ Matahari terbit dan... **semua orang selamat!**\n' +
-                    'Tidak ada korban malam ini. ';
+        'Tidak ada korban malam ini. ';
       if (blockedIds.length > 0) {
         description += 'Seseorang dilindungi oleh kekuatan misterius...';
       } else {
@@ -262,29 +262,29 @@ export async function startDayPhase(client, killedIds = [], blockedIds = []) {
     } else {
       const victimMentions = killedIds.map(id => `<@${id}>`).join(', ');
       description = `☀️ Matahari terbit, namun membawa kabar duka...\n\n` +
-                    `💀 **${victimMentions}** ditemukan tak bernyawa.\n\n` +
-                    `Siapakah dalang di balik ini? Saatnya berdiskusi dan mencari pelaku!`;
+        `💀 **${victimMentions}** ditemukan tak bernyawa.\n\n` +
+        `Siapakah dalang di balik ini? Saatnya berdiskusi dan mencari pelaku!`;
     }
 
     await globalChat.send({
       embeds: [{
-        color       : killedIds.length > 0 ? 0xe74c3c : 0xf1c40f,
-        title       : `☀️ Hari ${gameState.day_count} — Fajar Menyingsing`,
+        color: killedIds.length > 0 ? 0xe74c3c : 0xf1c40f,
+        title: `☀️ Hari ${gameState.day_count} — Fajar Menyingsing`,
         description,
-        fields      : [
+        fields: [
           {
-            name  : '👥 Pemain Hidup',
-            value : `${getAlivePlayers().length} orang tersisa`,
+            name: '👥 Pemain Hidup',
+            value: `${getAlivePlayers().length} orang tersisa`,
             inline: true,
           },
           {
-            name  : '⏱️ Diskusi',
-            value : `${DAY_DISCUSSION / 1000} detik`,
+            name: '⏱️ Diskusi',
+            value: `${DAY_DISCUSSION / 1000} detik`,
             inline: true,
           },
         ],
-        footer      : { text: 'Diskusikan siapa yang mencurigakan. Voting akan dimulai setelah waktu habis.' },
-        timestamp   : new Date().toISOString(),
+        footer: { text: 'Diskusikan siapa yang mencurigakan. Voting akan dimulai setelah waktu habis.' },
+        timestamp: new Date().toISOString(),
       }],
     });
   }
@@ -305,10 +305,10 @@ export async function startDayPhase(client, killedIds = [], blockedIds = []) {
     if (globalChat) {
       await globalChat.send({
         embeds: [{
-          color       : 0xe67e22,
-          title       : '⚖️ Waktu Diskusi Habis!',
-          description : 'Saatnya menentukan nasib. Siapa yang paling mencurigakan?\n\nGunakan dropdown di bawah untuk memberikan suara.',
-          timestamp   : new Date().toISOString(),
+          color: 0xe67e22,
+          title: '⚖️ Waktu Diskusi Habis!',
+          description: 'Saatnya menentukan nasib. Siapa yang paling mencurigakan?\n\nGunakan dropdown di bawah untuk memberikan suara.',
+          timestamp: new Date().toISOString(),
         }],
       });
     }
@@ -357,21 +357,37 @@ export async function endGame(client, winResult) {
 
   await globalChat.send({
     embeds: [{
-      color       : isWWWin ? 0x8b0000 : 0x2ecc71,
-      title       : isWWWin
+      color: isWWWin ? 0x8b0000 : 0x2ecc71,
+      title: isWWWin
         ? '🐺 WEREWOLF MENANG! 🐺'
         : '🏘️ VILLAGE MENANG! 🏘️',
-      description : `${winResult.reason}\n\n**Permainan berakhir pada Hari ${gameState.day_count}.**`,
-      fields      : [
+      description: `${winResult.reason}\n\n**Permainan berakhir pada Hari ${gameState.day_count}.**\n*Saluran ini akan otomatis dibersihkan dalam 3 menit.*`,
+      fields: [
         {
-          name  : '🎭 Pengungkapan Peran',
-          value : roleReveal || '*Tidak ada data*',
+          name: '🎭 Pengungkapan Peran',
+          value: roleReveal || '*Tidak ada data*',
         },
       ],
-      footer      : { text: 'Terima kasih telah bermain! Gunakan /stop untuk membersihkan arena.' },
-      timestamp   : new Date().toISOString(),
+      footer: { text: 'Terima kasih telah bermain! Gunakan /stop untuk membersihkan arena lebih awal.' },
+      timestamp: new Date().toISOString(),
     }],
   });
+
+  // Auto purge after 3 minutes
+  setTimeout(async () => {
+    // Only purge if game hasn't been reset manually
+    if (gameState.phase === 'ended' && gameState.channels.category_id) {
+      const categoryId = gameState.channels.category_id;
+      const { resetGame } = await import('../gameState.js');
+
+      const childChannels = guild.channels.cache.filter(c => c.parentId === categoryId);
+      for (const [, c] of childChannels) await c.delete('Auto purge after game end').catch(() => null);
+      await guild.channels.cache.get(categoryId)?.delete('Auto purge after game end').catch(() => null);
+
+      resetGame();
+      console.log(`[Engine] Auto-purged game channels for guild ${guild.id}`);
+    }
+  }, 3 * 60 * 1000);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -459,7 +475,7 @@ async function muteAllPlayers(guild, mute) {
     const playerData = gameState.players[memberId];
     if (!playerData) {
       // Bukan pemain (spectator) → selalu mute
-      try { await member.voice.setMute(true, 'Spectator auto-mute'); } catch (_) {}
+      try { await member.voice.setMute(true, 'Spectator auto-mute'); } catch (_) { }
       continue;
     }
 
