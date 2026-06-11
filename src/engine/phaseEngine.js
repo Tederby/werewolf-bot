@@ -235,6 +235,7 @@ async function resolveDawn(client) {
  */
 export async function startDayPhase(client, killedIds = [], blockedIds = []) {
   gameState.phase = 'day';
+  gameState.skip_votes = [];
   const guild = client.guilds.cache.get(gameState.guild_id);
   if (!guild) return;
 
@@ -319,6 +320,36 @@ export async function startDayPhase(client, killedIds = [], blockedIds = []) {
   console.log(`[Engine] Day phase started. Discussion timer: ${DAY_DISCUSSION / 1000}s`);
 }
 
+/**
+ * Lewati fase diskusi siang dan langsung mulai voting.
+ * Dipanggil oleh command /vote.
+ * @param {import('discord.js').Client} client 
+ */
+export async function skipDayDiscussion(client) {
+  if (gameState.phase !== 'day') return;
+  
+  clearTimeout(dayTimer);
+  dayTimer = null;
+  console.log('[Engine] Discussion skipped by user — starting lynch vote.');
+
+  const guild = client.guilds.cache.get(gameState.guild_id);
+  if (!guild) return;
+
+  const globalChat = guild.channels.cache.get(gameState.channels.global_chat);
+  if (globalChat) {
+    await globalChat.send({
+      embeds: [{
+        color: 0xe67e22,
+        title: '⚖️ Waktu Diskusi Dipercepat!',
+        description: 'Seseorang telah mempercepat waktu diskusi!\nSaatnya menentukan nasib. Siapa yang paling mencurigakan?\n\nGunakan dropdown di bawah untuk memberikan suara.',
+        timestamp: new Date().toISOString(),
+      }],
+    });
+  }
+
+  await startLynchVote(client);
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 //  GAME END
 // ══════════════════════════════════════════════════════════════════════════════
@@ -338,8 +369,19 @@ export async function endGame(client, winResult) {
 
   console.log(`[Engine] ──── GAME OVER: ${winResult.winner} WIN ────`);
 
-  // Unmute semua
-  await muteAllPlayers(guild, false);
+  // Unmute semua orang di Voice Channel (force unmute)
+  const voiceChannelId = gameState.channels.voice_lobby;
+  if (voiceChannelId) {
+    const vc = guild.channels.cache.get(voiceChannelId);
+    if (vc) {
+      for (const [, member] of vc.members) {
+        if (!member.user.bot) {
+          await member.voice.setMute(false, 'Game ended').catch(() => null);
+        }
+      }
+    }
+  }
+
   await lockGlobalChat(guild, false);
 
   const globalChat = guild.channels.cache.get(gameState.channels.global_chat);
@@ -380,9 +422,16 @@ export async function endGame(client, winResult) {
       const categoryId = gameState.channels.category_id;
       const { resetGame } = await import('../gameState.js');
 
-      const childChannels = guild.channels.cache.filter(c => c.parentId === categoryId);
-      for (const [, c] of childChannels) await c.delete('Auto purge after game end').catch(() => null);
-      await guild.channels.cache.get(categoryId)?.delete('Auto purge after game end').catch(() => null);
+      const gameChannelIds = [
+        gameState.channels.global_chat,
+        gameState.channels.ww_chat,
+        gameState.channels.graveyard,
+      ];
+      for (const id of gameChannelIds) {
+        if (!id) continue;
+        const ch = guild.channels.cache.get(id);
+        if (ch) await ch.delete('Auto purge after game end').catch(() => null);
+      }
 
       resetGame();
       console.log(`[Engine] Auto-purged game channels for guild ${guild.id}`);

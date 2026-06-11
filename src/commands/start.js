@@ -47,9 +47,11 @@ export async function execute(interaction) {
 
   // ── User harus di VC ──────────────────────────────────────────────────────
   const vc = member.voice?.channel;
-  if (!vc) {
+  const guildCfg = await getGuildConfig(guild.id);
+  
+  if (!vc || vc.id !== guildCfg.town_square_id) {
     return interaction.reply({
-      content: '🎤 Kamu harus berada di Voice Channel untuk menggunakan perintah ini.',
+      content: `🎤 Kamu harus berada di Voice Channel <#${guildCfg.town_square_id}> untuk menggunakan perintah ini.`,
       ephemeral: true,
     });
   }
@@ -81,7 +83,6 @@ export async function execute(interaction) {
 
   // Inisiasi vote baru
   const needed  = Math.ceil(vcMembers.length * 0.6);
-  const guildCfg = await getGuildConfig(guild.id);
   const setupCh  = guild.channels.cache.get(guildCfg?.setup_cmd_id);
 
   const voteEmbed = buildVoteEmbed('start', interaction.user, 1, needed, vcMembers.length);

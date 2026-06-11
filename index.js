@@ -20,8 +20,9 @@ import * as configCmd from './src/commands/config.js';
 import * as startCmd from './src/commands/start.js';
 import * as stopCmd from './src/commands/stop.js';
 import * as testCmd from './src/commands/test.js';
+import * as voteCmd from './src/commands/vote.js';
 
-import { isGuildSetup } from './src/utils/serverConfig.js';
+import { isGuildSetup, getGuildConfig } from './src/utils/serverConfig.js';
 import { gameState, clearVote } from './src/gameState.js';
 import { launchGame, buildVoteEmbed, buildVoteRow } from './src/commands/start.js';
 
@@ -46,7 +47,7 @@ const commands = new Collection();
 // Commands yang BEBAS digunakan tanpa setup-werewolf terlebih dahulu
 const UNGUARDED = new Set(['ping', 'setup-werewolf', 'bot-config', 'test']);
 
-const allCommands = [pingCmd, setupWerewolfCmd, botConfigCmd, setupCmd, configCmd, startCmd, stopCmd, testCmd];
+const allCommands = [pingCmd, setupWerewolfCmd, botConfigCmd, setupCmd, configCmd, startCmd, stopCmd, testCmd, voteCmd];
 for (const cmd of allCommands) {
   commands.set(cmd.data.name, cmd);
   console.log(`[Commands] Registered: /${cmd.data.name}`);
@@ -179,8 +180,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const vc = member.voice?.channel;
 
     // Validasi: user harus di VC untuk vote via button
-    if (!vc) {
-      return interaction.reply({ content: '🎤 Kamu harus berada di Voice Channel untuk vote.', ephemeral: true });
+    const guildCfg = await getGuildConfig(guild.id);
+    if (!vc || vc.id !== guildCfg?.town_square_id) {
+      return interaction.reply({ content: `🎤 Kamu harus berada di Voice Channel <#${guildCfg?.town_square_id}> untuk vote.`, ephemeral: true });
     }
 
     const vcMembers = [...vc.members.values()].filter(m => !m.user.bot);
@@ -371,11 +373,15 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
       cleanupTimers();
       cleanupLynchVote();
 
-      const categoryId = gameState.channels.category_id;
-      if (categoryId) {
-        const childChannels = guild.channels.cache.filter(c => c.parentId === categoryId);
-        for (const [, c] of childChannels) await c.delete('Voice empty cancel').catch(() => null);
-        await guild.channels.cache.get(categoryId)?.delete('Voice empty cancel').catch(() => null);
+      const gameChannelIds = [
+        gameState.channels.global_chat,
+        gameState.channels.ww_chat,
+        gameState.channels.graveyard,
+      ];
+      for (const id of gameChannelIds) {
+        if (!id) continue;
+        const ch = guild.channels.cache.get(id);
+        if (ch) await ch.delete('Voice empty cancel').catch(() => null);
       }
       resetGame();
     }

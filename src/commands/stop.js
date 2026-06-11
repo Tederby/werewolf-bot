@@ -35,8 +35,8 @@ export async function execute(interaction) {
   const vc = member.voice?.channel;
   const isHost = userId === gameState.host_id;
 
-  if (!isHost && !vc) {
-    return interaction.reply({ content: '🎤 Kamu harus berada di Voice Channel untuk voting.', ephemeral: true });
+  if (!isHost && (!vc || vc.id !== gameState.channels.voice_lobby)) {
+    return interaction.reply({ content: `🎤 Kamu harus berada di Voice Channel permainan (<#${gameState.channels.voice_lobby}>) untuk voting.`, ephemeral: true });
   }
 
   const vcMembers = vc ? [...vc.members.values()].filter(m => !m.user.bot) : [];

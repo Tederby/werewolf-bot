@@ -44,6 +44,9 @@ export const gameState = {
     seer_check     : null,
   },
 
+  // ── Day Skip ─────────────────────────────────────────────────────────────
+  skip_votes: [],
+
   // ── Sistem voting (/start & /stop oleh non-host) ──────────────────────────
   pending_vote: {
     type         : null,  // 'start' | 'stop' | null
@@ -86,6 +89,7 @@ export function activateGame() {
     gameState.players[id] = { role: null, status: 'alive', is_muted: false };
   });
   gameState.night_actions = { werewolf_votes: { target_id: null }, seer_check: null };
+  gameState.skip_votes  = [];
   console.log(`[GameState] Game activated | Players: ${Object.keys(gameState.players).length}`);
 }
 
@@ -112,6 +116,7 @@ export function resetGame() {
   gameState.session_config = { role_mode: 'auto', werewolves: null, seers: null };
   gameState.players       = {};
   gameState.night_actions = { werewolf_votes: { target_id: null }, seer_check: null };
+  gameState.skip_votes    = [];
   gameState.pending_vote  = { type: null, initiator_id: null, votes: [], message_id: null, channel_id: null, timeout_id: null };
 
   console.log(`[GameState] Reset | Previous guild: ${prevGuild}`);

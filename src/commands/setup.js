@@ -41,9 +41,11 @@ export async function execute(interaction) {
 
   // ── Validasi: user harus di VC ────────────────────────────────────────────
   const vc = member.voice?.channel;
-  if (!vc) {
+  const guildCfg   = await getGuildConfig(guild.id);
+  
+  if (!vc || vc.id !== guildCfg.town_square_id) {
     return interaction.reply({
-      content: '🎤 Kamu harus **bergabung ke Voice Channel** terlebih dahulu sebelum membuka lobby!',
+      content: `🎤 Kamu harus bergabung ke Voice Channel <#${guildCfg.town_square_id}> terlebih dahulu sebelum membuka lobby!`,
       ephemeral: true,
     });
   }
@@ -65,7 +67,6 @@ export async function execute(interaction) {
   const embed = buildLobbyEmbed(interaction.user, vc, playerList, roleSummary, 'auto');
 
   // ── Kirim ke #setup-cmd ───────────────────────────────────────────────────
-  const guildCfg   = await getGuildConfig(guild.id);
   const setupCmdCh = guild.channels.cache.get(guildCfg.setup_cmd_id);
 
   let lobbyMsg = null;

@@ -1,1 +1,17 @@
-{}
+{
+  "806433866021076992": {
+    "configured": true,
+    "setup_category_id": "1514274193175482409",
+    "setup_cmd_id": "1514274196019216404",
+    "town_square_id": "1514274198036676608",
+    "configured_at": "2026-06-10T14:24:53.615Z",
+    "configured_by": "644318599409827879",
+    "bot_config": {
+      "member_role_id": "806436545027899443",
+      "min_players": 5,
+      "night_timer": 60,
+      "day_timer": 3,
+      "vote_threshold": 60
+    }
+  }
+}

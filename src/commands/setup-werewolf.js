@@ -45,32 +45,32 @@ export async function execute(interaction) {
 
   // ── Buat channel permanen dari awal ───────────────────────────────────────
   try {
-    const cfg         = await getGuildConfig(guild.id);
+    const cfg = await getGuildConfig(guild.id);
     const botSettings = mergeWithDefaults(cfg?.bot_config);
 
     const memberRoleId = botSettings.member_role_id ?? guild.roles.everyone.id;
-    const botId        = guild.client.user.id;
+    const botId = guild.client.user.id;
 
     // ── Kategori permanen ─────────────────────────────────────────────────
     const category = await guild.channels.create({
-      name: '🐺 Werewolf Bot',
+      name: '【🐺】Werewolf',
       type: ChannelType.GuildCategory,
     });
 
     // ── #setup-cmd ────────────────────────────────────────────────────────
     const setupCmd = await guild.channels.create({
-      name  : 'setup-cmd',
-      type  : ChannelType.GuildText,
+      name: '【📄】setup-cmd',
+      type: ChannelType.GuildText,
       parent: category.id,
-      topic : '📋 Pusat komando bot Werewolf. Ketik /setup untuk memulai lobby.',
+      topic: '📋 Pusat komando bot Werewolf. Ketik /setup untuk memulai lobby.',
       permissionOverwrites: [
         {
-          id   : memberRoleId,
+          id: memberRoleId,
           allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages],
-          deny : [PermissionFlagsBits.AttachFiles, PermissionFlagsBits.EmbedLinks],
+          deny: [PermissionFlagsBits.AttachFiles, PermissionFlagsBits.EmbedLinks],
         },
         {
-          id   : botId,
+          id: botId,
           allow: [
             PermissionFlagsBits.ViewChannel,
             PermissionFlagsBits.SendMessages,
@@ -83,16 +83,16 @@ export async function execute(interaction) {
 
     // ── 🔊 Town Square — Voice Channel permanen ──────────────────────────
     const townSquare = await guild.channels.create({
-      name  : '🔊 Town Square',
-      type  : ChannelType.GuildVoice,
+      name: '【🔊】Town Square',
+      type: ChannelType.GuildVoice,
       parent: category.id,
       permissionOverwrites: [
         {
-          id   : memberRoleId,
+          id: memberRoleId,
           allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak],
         },
         {
-          id   : botId,
+          id: botId,
           allow: [
             PermissionFlagsBits.ViewChannel,
             PermissionFlagsBits.Connect,
@@ -105,44 +105,44 @@ export async function execute(interaction) {
 
     // ── Simpan ke servers.json ────────────────────────────────────────────
     await saveGuildConfig(guild.id, {
-      configured        : true,
-      setup_category_id : category.id,
-      setup_cmd_id      : setupCmd.id,
-      town_square_id    : townSquare.id,
-      configured_at     : new Date().toISOString(),
-      configured_by     : interaction.user.id,
+      configured: true,
+      setup_category_id: category.id,
+      setup_cmd_id: setupCmd.id,
+      town_square_id: townSquare.id,
+      configured_at: new Date().toISOString(),
+      configured_by: interaction.user.id,
     });
 
     // ── Pesan selamat datang ──────────────────────────────────────────────
     await setupCmd.send({
       embeds: [{
-        color      : 0x5865f2,
-        title      : '🐺 Werewolf Bot — Siap!',
+        color: 0x5865f2,
+        title: '🐺 Werewolf Bot — Siap!',
         description: 'Setup berhasil! Channel permanen telah dibuat.',
         fields: [
           {
-            name  : '📋 Channel Permanen',
-            value :
+            name: '📋 Channel Permanen',
+            value:
               `<#${setupCmd.id}> — Pusat komando\n` +
               `**🔊 Town Square** — Voice channel permainan`,
             inline: false,
           },
           {
-            name  : '📋 Channel Game (dibuat otomatis saat /start)',
-            value : '#global-chat, #werewolf-pact, #graveyard',
+            name: '📋 Channel Game (dibuat otomatis saat /start)',
+            value: '#global-chat, #werewolf-pact, #graveyard',
             inline: false,
           },
-          { name: '`/setup`',  value: 'Buka lobby & jadilah Host.',          inline: true },
+          { name: '`/setup`', value: 'Buka lobby & jadilah Host.', inline: true },
           { name: '`/config`', value: 'Atur komposisi peran (khusus Host).', inline: true },
-          { name: '`/start`',  value: 'Mulai permainan.',                    inline: true },
-          { name: '`/stop`',   value: 'Hentikan permainan.',                 inline: true },
+          { name: '`/start`', value: 'Mulai permainan.', inline: true },
+          { name: '`/stop`', value: 'Hentikan permainan.', inline: true },
           {
-            name  : '⚠️ Catatan',
-            value : `Semua command gameplay harus diketik di <#${setupCmd.id}> ini.\nJangan hapus channel ini!`,
+            name: '⚠️ Catatan',
+            value: `Semua command gameplay harus diketik di <#${setupCmd.id}> ini.\nJangan hapus channel ini!`,
             inline: false,
           },
         ],
-        footer   : { text: `Setup oleh ${interaction.user.tag}` },
+        footer: { text: `Setup oleh ${interaction.user.tag}` },
         timestamp: new Date().toISOString(),
       }],
     });
