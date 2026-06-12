@@ -20,8 +20,9 @@ import { getGuildConfig, saveGuildConfig } from '../utils/serverConfig.js';
 export const BOT_CONFIG_DEFAULTS = {
   member_role_id    : null,   // null = gunakan @everyone
   min_players       : 5,
-  night_timer       : 60,     // detik
-  day_timer         : 3,      // menit
+  night_timer       : 30,     // detik
+  day_timer         : 2,      // menit (= 120 detik)
+  vote_timer        : 20,     // detik
   vote_threshold    : 60,     // persen (%)
 };
 
@@ -61,9 +62,9 @@ export const data = new SlashCommandBuilder()
     .setDescription('Set durasi fase malam (waktu Werewolf memilih target).')
     .addIntegerOption(opt => opt
       .setName('seconds')
-      .setDescription('Durasi dalam detik (default: 60, min: 30, max: 180)')
+      .setDescription('Durasi dalam detik (default: 30, min: 15, max: 180)')
       .setRequired(true)
-      .setMinValue(30)
+      .setMinValue(15)
       .setMaxValue(180)))
 
   // ── /bot-config day-timer ─────────────────────────────────────────────────
@@ -72,10 +73,21 @@ export const data = new SlashCommandBuilder()
     .setDescription('Set durasi diskusi siang sebelum voting eksekusi.')
     .addIntegerOption(opt => opt
       .setName('minutes')
-      .setDescription('Durasi dalam menit (default: 3, min: 1, max: 10)')
+      .setDescription('Durasi dalam menit (default: 2, min: 1, max: 10)')
       .setRequired(true)
       .setMinValue(1)
       .setMaxValue(10)))
+
+  // ── /bot-config vote-timer ────────────────────────────────────────────────
+  .addSubcommand(sub => sub
+    .setName('vote-timer')
+    .setDescription('Set durasi voting lynch siang hari.')
+    .addIntegerOption(opt => opt
+      .setName('seconds')
+      .setDescription('Durasi dalam detik (default: 20, min: 10, max: 120)')
+      .setRequired(true)
+      .setMinValue(10)
+      .setMaxValue(120)))
 
   // ── /bot-config vote-threshold ────────────────────────────────────────────
   .addSubcommand(sub => sub
@@ -129,6 +141,11 @@ export async function execute(interaction) {
           {
             name  : '☀️ Timer Diskusi Siang',
             value : `\`${settings.day_timer}\` menit`,
+            inline: true,
+          },
+          {
+            name  : '⚖️ Timer Voting Lynch',
+            value : `\`${settings.vote_timer}\` detik`,
             inline: true,
           },
           {
@@ -229,6 +246,17 @@ export async function execute(interaction) {
     await saveBotConfig(guild.id, settings);
     return interaction.reply({
       content  : `✅ **Timer Diskusi Siang** diset ke \`${minutes}\` menit.`,
+      ephemeral: true,
+    });
+  }
+
+  // ── /bot-config vote-timer ────────────────────────────────────────────────
+  if (sub === 'vote-timer') {
+    const seconds = interaction.options.getInteger('seconds');
+    settings.vote_timer = seconds;
+    await saveBotConfig(guild.id, settings);
+    return interaction.reply({
+      content  : `✅ **Timer Voting Lynch** diset ke \`${seconds}\` detik.`,
       ephemeral: true,
     });
   }

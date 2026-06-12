@@ -51,6 +51,27 @@ export async function execute(interaction) {
     const memberRoleId = botSettings.member_role_id ?? guild.roles.everyone.id;
     const botId = guild.client.user.id;
 
+    // ── Create alive/dead server roles (for mute management) ──────────────
+    let aliveRole = guild.roles.cache.find(r => r.name === 'Werewolf: Alive');
+    if (!aliveRole) {
+      aliveRole = await guild.roles.create({
+        name: 'Werewolf: Alive',
+        color: 0x2ecc71,
+        reason: 'Werewolf Bot - role untuk pemain hidup',
+        mentionable: false,
+      });
+    }
+
+    let deadRole = guild.roles.cache.find(r => r.name === 'Werewolf: Dead');
+    if (!deadRole) {
+      deadRole = await guild.roles.create({
+        name: 'Werewolf: Dead',
+        color: 0x808080,
+        reason: 'Werewolf Bot - role untuk pemain mati',
+        mentionable: false,
+      });
+    }
+
     // ── Kategori permanen ─────────────────────────────────────────────────
     const category = await guild.channels.create({
       name: '【🐺】Werewolf',
@@ -109,6 +130,8 @@ export async function execute(interaction) {
       setup_category_id: category.id,
       setup_cmd_id: setupCmd.id,
       town_square_id: townSquare.id,
+      alive_role_id: aliveRole.id,
+      dead_role_id: deadRole.id,
       configured_at: new Date().toISOString(),
       configured_by: interaction.user.id,
     });

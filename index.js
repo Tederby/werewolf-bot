@@ -23,14 +23,19 @@ import * as testCmd from './src/commands/test.js';
 import * as voteCmd from './src/commands/vote.js';
 
 import { isGuildSetup, getGuildConfig } from './src/utils/serverConfig.js';
-import { gameState, clearVote } from './src/gameState.js';
+import { gameState, clearVote, resetGame as resetGameState } from './src/gameState.js';
 import { launchGame, buildVoteEmbed, buildVoteRow } from './src/commands/start.js';
+import { buildLobbyEmbed, buildLobbyButtons } from './src/commands/setup.js';
 
 // ── Role System (auto-registers all roles on import) ──────────────────────
 import { getRole } from './src/roles/index.js';
 import { submitAction, hasSubmitted } from './src/roles/nightActions.js';
 import { onNightActionReceived } from './src/engine/phaseEngine.js';
 import { castLynchVote } from './src/engine/lynchVote.js';
+import { processWwVote } from './src/roles/defs/werewolf.js';
+import { buildSeerRevealResult } from './src/roles/defs/seer.js';
+import { getZoneClue, getAllClues, formatClueText } from './src/engine/zoneSystem.js';
+import { calculateAutoRoles, formatRoleSummary } from './src/utils/roleCalculator.js';
 
 dotenv.config();
 
@@ -117,12 +122,81 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   // ── Button Interactions ───────────────────────────────────────────────────
   if (interaction.isButton()) {
-    const [prefix, type, action] = interaction.customId.split(':');
+    const customId = interaction.customId;
+    const [prefix, type, action] = customId.split(':');
 
     // ── Test Mode Buttons ─────────────────────────────────────────────────
     if (prefix === 'test') {
       await testCmd.handleTestButton(interaction, type);
       return;
+    }
+
+    // ── Lobby Buttons (Config / Start / Cancel) ────────────────────────────
+    if (prefix === 'lobby') {
+      await handleLobbyButton(interaction, type);
+      return;
+    }
+
+    // ── Game: Reveal Role Button ───────────────────────────────────────────
+    if (prefix === 'game' && type === 'reveal_role') {
+      const player = gameState.players[interaction.user.id];
+      if (!player) {
+        return interaction.reply({ content: '⚠️ Kamu bukan pemain dalam game ini.', ephemeral: true });
+      }
+      const roleDef = getRole(player.role);
+      return interaction.reply({
+        embeds: [{
+          color       : player.role === 'werewolf' ? 0x8b0000 : 0x2ecc71,
+          title       : `${roleDef?.emoji ?? '❓'} Peran Kamu: ${roleDef?.displayName ?? player.role}`,
+          description : `**Tim:** ${roleDef?.team === 'werewolf' ? '🐺 Werewolf' : '🏘️ Village'}\n` +
+                        `**Tujuan:** ${roleDef?.winCondition ?? '-'}`,
+          footer      : { text: 'Jangan beritahu siapapun peranmu! 🤫' },
+          timestamp   : new Date().toISOString(),
+        }],
+        ephemeral: true,
+      });
+    }
+
+    // ── Zone Reveal Button ─────────────────────────────────────────────────
+    if (prefix === 'zone' && type === 'reveal') {
+      const zoneId = action;
+      const player = gameState.players[interaction.user.id];
+
+      // Werewolf gets ALL zone clues
+      if (player && player.role === 'werewolf' && player.status === 'alive') {
+        const allClues = getAllClues();
+        const clueTexts = [];
+        for (const [, clue] of allClues) {
+          clueTexts.push(formatClueText(clue));
+        }
+        return interaction.reply({
+          embeds: [{
+            color: 0x8b0000,
+            title: '🐺 Semua Clue Zona (Werewolf Only)',
+            description: clueTexts.join('\n\n') || '*Tidak ada data.*',
+            footer: { text: 'Informasi ini hanya tersedia untuk Werewolf.' },
+            timestamp: new Date().toISOString(),
+          }],
+          ephemeral: true,
+        });
+      }
+
+      // Regular players: show this zone's clue
+      const clue = getZoneClue(zoneId);
+      if (!clue) {
+        return interaction.reply({ content: '⚠️ Data zona tidak tersedia.', ephemeral: true });
+      }
+
+      return interaction.reply({
+        embeds: [{
+          color: 0x3498db,
+          title: `${clue.zoneEmoji} Clue ${clue.zoneName}`,
+          description: formatClueText(clue),
+          footer: { text: 'Clue ini sama untuk semua orang yang melihat.' },
+          timestamp: new Date().toISOString(),
+        }],
+        ephemeral: true,
+      });
     }
 
     // ── Night Action Button (ephemeral ability UI) ─────────────────────────
@@ -276,7 +350,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   if (interaction.isStringSelectMenu()) {
     const customId = interaction.customId;
 
-    // ── Night Action: Werewolf Kill ─────────────────────────────────────────
+    // ── Night Action: Werewolf Kill (now uses voting system) ─────────────────
     if (customId === 'night:werewolf:kill') {
       if (gameState.phase !== 'night') {
         return interaction.reply({ content: '⚠️ Bukan fase malam.', ephemeral: true });
@@ -285,24 +359,31 @@ client.on(Events.InteractionCreate, async (interaction) => {
       if (!player || player.role !== 'werewolf') {
         return interaction.reply({ content: '⚠️ Kamu bukan Werewolf.', ephemeral: true });
       }
-      if (hasSubmitted('werewolf')) {
-        return interaction.reply({ content: '⚠️ Werewolf sudah memilih target malam ini.', ephemeral: true });
+      if (gameState.ww_votes.resolved) {
+        return interaction.reply({ content: '✅ Target sudah dikunci untuk malam ini.', ephemeral: true });
+      }
+
+      // Check if this WW already voted this round
+      if (gameState.ww_votes.votes[interaction.user.id]) {
+        return interaction.reply({ content: '⚠️ Kamu sudah vote round ini. Tunggu hasil voting.', ephemeral: true });
       }
 
       const targetId = interaction.values[0];
-      submitAction('werewolf', interaction.user.id, targetId);
+      const result = await processWwVote(interaction.user.id, targetId, interaction.client);
 
       await interaction.reply({
-        content: `🐺 Target dikunci: <@${targetId}>. Tunggu fajar...`,
+        content: result.message,
         ephemeral: true,
       });
 
-      // Cek apakah semua aksi sudah masuk
-      await onNightActionReceived(interaction.client);
+      // If resolved, trigger night action check
+      if (result.status === 'resolved') {
+        await onNightActionReceived(interaction.client);
+      }
       return;
     }
 
-    // ── Night Action: Seer Reveal ────────────────────────────────────────────
+    // ── Night Action: Seer Reveal (immediate ephemeral result) ──────────────
     if (customId === 'night:seer:reveal') {
       if (gameState.phase !== 'night') {
         return interaction.reply({ content: '⚠️ Bukan fase malam.', ephemeral: true });
@@ -318,8 +399,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
       const targetId = interaction.values[0];
       submitAction('seer', interaction.user.id, targetId);
 
+      // Langsung kirim hasil terawang secara EPHEMERAL (bukan nunggu fajar)
+      const revealResult = buildSeerRevealResult(targetId);
       await interaction.reply({
-        content: `🔮 Kamu menerawang <@${targetId}>. Hasil akan dikirim saat fajar...`,
+        ...revealResult,
         ephemeral: true,
       });
 
@@ -340,6 +423,88 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
   }
 });
+
+// ── Lobby Button Handler ───────────────────────────────────────────────────
+async function handleLobbyButton(interaction, action) {
+  const guild = interaction.guild;
+  const userId = interaction.user.id;
+
+  if (gameState.phase !== 'lobby') {
+    return interaction.reply({ content: '⚠️ Tidak ada lobby yang aktif.', ephemeral: true });
+  }
+
+  // ── Config Button ─────────────────────────────────────────────────────────
+  if (action === 'config') {
+    if (userId !== gameState.host_id) {
+      return interaction.reply({ content: `⛔ Hanya Host (<@${gameState.host_id}>) yang bisa mengubah konfigurasi.`, ephemeral: true });
+    }
+
+    // Show current config
+    const playerCount = gameState.lobby_players.length;
+    const cfg = gameState.session_config;
+    const roles = cfg.role_mode === 'auto'
+      ? calculateAutoRoles(playerCount)
+      : null;
+    const roleSummary = formatRoleSummary(roles);
+
+    return interaction.reply({
+      embeds: [{
+        color: 0x5865f2,
+        title: '⚙️ Konfigurasi Sesi',
+        description: `Mode: **${cfg.role_mode}**\n${roleSummary}\n\nGunakan perintah \`/config set\` atau \`/config auto\` untuk mengubah.`,
+      }],
+      ephemeral: true,
+    });
+  }
+
+  // ── Start Button ──────────────────────────────────────────────────────────
+  if (action === 'start') {
+    if (userId !== gameState.host_id) {
+      return interaction.reply({ content: `⛔ Hanya Host (<@${gameState.host_id}>) yang bisa memulai game. Gunakan \`/start\` untuk voting.`, ephemeral: true });
+    }
+
+    const vc = interaction.member.voice?.channel;
+    const guildCfg = await getGuildConfig(guild.id);
+    if (!vc || vc.id !== guildCfg.town_square_id) {
+      return interaction.reply({
+        content: `🎤 Kamu harus berada di Voice Channel <#${guildCfg.town_square_id}> untuk memulai.`,
+        ephemeral: true,
+      });
+    }
+
+    const vcMembers = [...vc.members.values()].filter(m => !m.user.bot);
+    await interaction.deferReply({ ephemeral: true });
+    await launchGame(interaction, guild, vcMembers);
+    return;
+  }
+
+  // ── Cancel Button ─────────────────────────────────────────────────────────
+  if (action === 'cancel') {
+    if (userId !== gameState.host_id) {
+      return interaction.reply({ content: `⛔ Hanya Host (<@${gameState.host_id}>) yang bisa membatalkan lobby.`, ephemeral: true });
+    }
+
+    // Save lobby msg ID before reset clears it
+    const lobbyMsgId = gameState.lobby_msg_id;
+
+    // Reset lobby
+    const { resetGame } = await import('./src/gameState.js');
+    resetGame();
+
+    // Update the lobby message
+    const guildCfg = await getGuildConfig(guild.id);
+    const setupCh = guild.channels.cache.get(guildCfg?.setup_cmd_id);
+    if (setupCh && lobbyMsgId) {
+      const msg = await setupCh.messages.fetch(lobbyMsgId).catch(() => null);
+      await msg?.edit({
+        embeds: [{ color: 0x808080, title: '❌ Lobby Dibatalkan', description: `Dibatalkan oleh <@${userId}>.` }],
+        components: [],
+      });
+    }
+
+    return interaction.reply({ content: '✅ Lobby telah dibatalkan.', ephemeral: true });
+  }
+}
 
 // ── Voice State Update (Edge Cases Mitigation) ─────────────────────────────
 client.on(Events.VoiceStateUpdate, async (oldState, newState) => {

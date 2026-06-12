@@ -12,7 +12,7 @@ import { SlashCommandBuilder } from 'discord.js';
 import { gameState } from '../gameState.js';
 import { getGuildConfig } from '../utils/serverConfig.js';
 import { calculateAutoRoles, calculateCustomRoles, formatRoleSummary } from '../utils/roleCalculator.js';
-import { buildLobbyEmbed } from './setup.js';
+import { buildLobbyEmbed, buildLobbyButtons } from './setup.js';
 import { requireSetupCmd } from '../utils/channelGuard.js';
 
 export const data = new SlashCommandBuilder()
@@ -134,6 +134,6 @@ async function updateLobbyEmbed(interaction, mode, roleSummary) {
     const playerList  = vcMembers.map((m, i) => `${i + 1}. <@${m.id}>`).join('\n') || '*(belum ada)*';
     const hostUser    = await guild.members.fetch(gameState.host_id);
 
-    await msg.edit({ embeds: [buildLobbyEmbed(hostUser.user, vc ?? { name: '—' }, playerList, roleSummary, mode)] });
+    await msg.edit({ embeds: [buildLobbyEmbed(hostUser.user, vc ?? { name: '—' }, playerList, roleSummary, mode)], components: [buildLobbyButtons()] });
   } catch (_) { /* pesan mungkin sudah dihapus */ }
 }

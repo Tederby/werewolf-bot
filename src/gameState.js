@@ -44,6 +44,14 @@ export const gameState = {
     seer_check     : null,
   },
 
+  // ── Werewolf Voting System ───────────────────────────────────────────────
+  ww_votes: {
+    votes       : {},    // { [wwUserId]: targetId }
+    round       : 1,     // round ke berapa
+    message_id  : null,  // ID pesan vote di #werewolf-pact
+    resolved    : false, // true jika sudah resolve
+  },
+
   // ── Day Skip ─────────────────────────────────────────────────────────────
   skip_votes: [],
 
@@ -55,6 +63,12 @@ export const gameState = {
     message_id   : null,  // ID pesan vote embed
     channel_id   : null,  // ID channel pesan vote
     timeout_id   : null,  // return value dari setTimeout (untuk dibatalkan)
+  },
+
+  // ── Server Roles (alive/dead) ────────────────────────────────────────────
+  server_roles: {
+    alive_role_id : null,
+    dead_role_id  : null,
   },
 };
 
@@ -89,7 +103,8 @@ export function activateGame() {
     gameState.players[id] = { role: null, status: 'alive', is_muted: false };
   });
   gameState.night_actions = { werewolf_votes: { target_id: null }, seer_check: null };
-  gameState.skip_votes  = [];
+  gameState.ww_votes     = { votes: {}, round: 1, message_id: null, resolved: false };
+  gameState.skip_votes   = [];
   console.log(`[GameState] Game activated | Players: ${Object.keys(gameState.players).length}`);
 }
 
@@ -116,8 +131,10 @@ export function resetGame() {
   gameState.session_config = { role_mode: 'auto', werewolves: null, seers: null };
   gameState.players       = {};
   gameState.night_actions = { werewolf_votes: { target_id: null }, seer_check: null };
+  gameState.ww_votes      = { votes: {}, round: 1, message_id: null, resolved: false };
   gameState.skip_votes    = [];
   gameState.pending_vote  = { type: null, initiator_id: null, votes: [], message_id: null, channel_id: null, timeout_id: null };
+  gameState.server_roles  = { alive_role_id: null, dead_role_id: null };
 
   console.log(`[GameState] Reset | Previous guild: ${prevGuild}`);
 }
@@ -128,6 +145,16 @@ export function resetGame() {
 export function clearVote() {
   if (gameState.pending_vote.timeout_id) clearTimeout(gameState.pending_vote.timeout_id);
   gameState.pending_vote = { type: null, initiator_id: null, votes: [], message_id: null, channel_id: null, timeout_id: null };
+}
+
+/**
+ * Reset state voting WW untuk round baru.
+ */
+export function resetWwVotes() {
+  gameState.ww_votes.votes = {};
+  gameState.ww_votes.round += 1;
+  gameState.ww_votes.message_id = null;
+  gameState.ww_votes.resolved = false;
 }
 
 // ── Helper ───────────────────────────────────────────────────────────────────

@@ -9,10 +9,10 @@
  *  2. User harus berada di Voice Channel
  *  3. Scan pemain di VC (excludes bots)
  *  4. Inisialisasi lobby di gameState
- *  5. Kirim embed preview ke #setup-cmd
+ *  5. Kirim embed preview dengan tombol Config/Start/Cancel
  */
 
-import { SlashCommandBuilder } from 'discord.js';
+import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { gameState, initLobby } from '../gameState.js';
 import { getGuildConfig } from '../utils/serverConfig.js';
 import { calculateAutoRoles, formatRoleSummary } from '../utils/roleCalculator.js';
@@ -65,19 +65,20 @@ export async function execute(interaction) {
   const playerList  = vcMembers.map((m, i) => `${i + 1}. <@${m.id}>`).join('\n') || '*(belum ada)*';
 
   const embed = buildLobbyEmbed(interaction.user, vc, playerList, roleSummary, 'auto');
+  const actionRow = buildLobbyButtons();
 
   // ── Kirim ke #setup-cmd ───────────────────────────────────────────────────
   const setupCmdCh = guild.channels.cache.get(guildCfg.setup_cmd_id);
 
   let lobbyMsg = null;
   if (setupCmdCh) {
-    lobbyMsg = await setupCmdCh.send({ embeds: [embed] });
+    lobbyMsg = await setupCmdCh.send({ embeds: [embed], components: [actionRow] });
     gameState.lobby_msg_id = lobbyMsg.id;
   }
 
   await interaction.editReply(
     `✅ Kamu sekarang menjadi **Host** sesi ini!\nLobby telah dibuka di <#${guildCfg.setup_cmd_id}>.\n\n` +
-    `Gunakan \`/config\` untuk mengatur peran, atau \`/start\` untuk langsung mulai.`
+    `Gunakan tombol di embed atau \`/config\` untuk mengatur peran, \`/start\` untuk langsung mulai.`
   );
 
   console.log(`[/setup] Lobby opened | Host: ${interaction.user.tag} | Players: ${lobbyPlayers.length}`);
@@ -96,7 +97,27 @@ export function buildLobbyEmbed(hostUser, vc, playerList, roleSummary, mode) {
       { name: `👥 Pemain (${playerList.split('\n').length})`, value: playerList, inline: true },
       { name: `🎭 Distribusi Peran (mode: \`${mode}\`)`,      value: roleSummary, inline: true },
     ],
-    footer    : { text: 'Host: ketik /config untuk atur peran • /start untuk mulai • Anggota VC: /start untuk voting' },
+    footer    : { text: 'Gunakan tombol di bawah untuk Config, Start, atau Cancel.' },
     timestamp : new Date().toISOString(),
   };
+}
+
+/**
+ * Buat tombol Config, Start, Cancel untuk lobby embed.
+ */
+export function buildLobbyButtons() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('lobby:config')
+      .setLabel('⚙️ Config')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('lobby:start')
+      .setLabel('▶️ Start')
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId('lobby:cancel')
+      .setLabel('❌ Cancel')
+      .setStyle(ButtonStyle.Danger),
+  );
 }

@@ -11,8 +11,9 @@ import { gameState, resetGame, clearVote } from '../gameState.js';
 import { getGuildConfig } from '../utils/serverConfig.js';
 import { buildVoteEmbed, buildVoteRow } from './start.js';
 import { requireSetupCmd } from '../utils/channelGuard.js';
-import { cleanupTimers } from '../engine/phaseEngine.js';
+import { cleanupTimers, clearServerRoles } from '../engine/phaseEngine.js';
 import { cleanupLynchVote } from '../engine/lynchVote.js';
+import { resetZones } from '../engine/zoneSystem.js';
 
 export const data = new SlashCommandBuilder()
   .setName('stop')
@@ -107,6 +108,15 @@ async function performStop(interaction, guild) {
       const ch = guild.channels.cache.get(id);
       if (ch) await ch.delete('Game stopped').catch(() => null);
     }
+
+    // Cleanup server roles (alive/dead)
+    const guildCfg2 = await getGuildConfig(guild.id);
+    for (const [userId] of Object.entries(gameState.players)) {
+      await clearServerRoles(guild, guildCfg2, userId);
+    }
+
+    // Reset zones
+    resetZones();
 
     // Unmute semua pemain di VC sebelum reset
     const voiceChannelId = gameState.channels.voice_lobby;
