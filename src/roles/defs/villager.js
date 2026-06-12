@@ -16,6 +16,7 @@ registerRole({
   winCondition   : 'Semua Werewolf berhasil dieliminasi.',
   hasNightAction : false,
   priority       : 999,
+  rolePoints     : 0,   // Sistem Role Point (baseline)
   sendActionUI   : null,
   resolveAction  : null,
 });

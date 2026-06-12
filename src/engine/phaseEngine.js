@@ -13,6 +13,7 @@
  *  6. Resolve aksi malam & umumkan korban
  *  7. Jalankan voting siang (lynch vote)
  *  8. Cek win condition setiap transisi
+ *  9. Zona system: clue & alibi management
  */
 
 import { PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
@@ -23,16 +24,19 @@ import {
 } from '../roles/index.js';
 import { checkWinCondition } from './winCondition.js';
 import { startLynchVote } from './lynchVote.js';
+import { getTimerConfig } from '../utils/configHelper.js';
+import {
+  assignZones, setAttackedZone, generateClues,
+  getZoneClue, getAllClues, formatClueText, ZONES, getPlayerZone,
+  resetZones,
+} from './zoneSystem.js';
+import { getGuildConfig } from '../utils/serverConfig.js';
 
 /** @type {NodeJS.Timeout|null} Timer malam (anti-AFK) */
 let nightTimer = null;
 
 /** @type {NodeJS.Timeout|null} Timer diskusi siang */
 let dayTimer = null;
-
-// ── Konfigurasi default (bisa di-override dari bot-config nanti) ──────────
-const NIGHT_DURATION = 60_000;   // 60 detik
-const DAY_DISCUSSION = 180_000;  // 3 menit diskusi
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  NIGHT PHASE
@@ -47,6 +51,10 @@ export async function startNightPhase(client) {
   const guild = client.guilds.cache.get(gameState.guild_id);
   if (!guild) return;
 
+  // Ambil timer dari config
+  const timers = await getTimerConfig(gameState.guild_id);
+  const NIGHT_DURATION = timers.nightDuration;
+
   console.log(`[Engine] ──── NIGHT ${gameState.day_count} ────`);
 
   // 1. Kunci #global-chat (tidak ada yang bisa kirim pesan)
@@ -58,21 +66,38 @@ export async function startNightPhase(client) {
   // 3. Reset aksi malam
   resetNightActions();
 
-  // 4. Kirim pengumuman malam di #global-chat
+  // 4. Assign zona
+  const aliveIds = getAlivePlayers().map(p => p.id);
+  assignZones(aliveIds);
+
+  // 5. Kirim pengumuman malam di #global-chat
   const globalChat = guild.channels.cache.get(gameState.channels.global_chat);
   if (globalChat) {
+    // Zone assignments info
+    const zoneInfo = ZONES.map(z => {
+      const playersInZone = aliveIds.filter(id => getPlayerZone(id) === z.id);
+      const playerMentions = playersInZone.map(id => `<@${id}>`).join(', ') || '*kosong*';
+      return `${z.emoji} **${z.name}**: ${playerMentions}`;
+    }).join('\n');
+
     await globalChat.send({
       embeds: [{
         color: 0x1a1a2e,
         title: `🌙 Malam Hari ${gameState.day_count}`,
         description: 'Keheningan menyelimuti desa... Para penduduk tertidur.\nSementara itu, makhluk-makhluk malam mulai beraksi.',
+        fields: [
+          {
+            name: '📍 Lokasi Pemain Malam Ini',
+            value: zoneInfo,
+          },
+        ],
         footer: { text: `⏱️ Fase malam berlangsung ${NIGHT_DURATION / 1000} detik.` },
         timestamp: new Date().toISOString(),
       }],
     });
   }
 
-  // 5. Kirim UI aksi malam ke setiap role yang punya night action
+  // 6. Kirim UI aksi malam ke setiap role yang punya night action
   const nightRoles = getNightActionRoles();
   let hasEphemeralRoles = false;
 
@@ -95,7 +120,7 @@ export async function startNightPhase(client) {
     }
   }
 
-  // 6. Jika ada role yang pakai ephemeral, kirim tombol generic di #global-chat
+  // 7. Jika ada role yang pakai ephemeral, kirim tombol generic di #global-chat
   if (hasEphemeralRoles && globalChat) {
     const actionButton = new ButtonBuilder()
       .setCustomId('night:action')
@@ -114,7 +139,7 @@ export async function startNightPhase(client) {
     });
   }
 
-  // 7. Pasang Force-Next Timer (anti-AFK softlock)
+  // 8. Pasang Force-Next Timer (anti-AFK softlock)
   clearTimeout(nightTimer);
   nightTimer = setTimeout(async () => {
     console.log('[Engine] Night timer expired — forcing dawn.');
@@ -171,6 +196,8 @@ async function resolveDawn(client) {
     switch (result.type) {
       case 'kill': {
         killed.push(result.targetId);
+        // Set zona yang diserang
+        setAttackedZone(result.targetId);
         break;
       }
       case 'reveal': {
@@ -187,39 +214,28 @@ async function resolveDawn(client) {
     }
   }
 
-  // 3. Apply kematian ke gameState
+  // 3. Generate zone clues
+  await generateClues(guild);
+
+  // 4. Apply kematian ke gameState + update server roles
+  const guildCfg = await getGuildConfig(gameState.guild_id);
   for (const victimId of killed) {
     setPlayer(victimId, { status: 'dead' });
     // Buka akses graveyard, tutup global-chat
     await updateDeadPlayerPermissions(guild, victimId);
+    // Update server roles
+    await updateServerRoles(guild, guildCfg, victimId, 'dead');
   }
 
-  // 4. Kirim hasil terawang ke Seer via DM
+  // 5. Kirim hasil terawang ke Seer secara EPHEMERAL
+  //    (Catatan: hasil reveal sekarang dikirim langsung saat Seer memilih target,
+  //     bukan lagi di sini. Blok ini tetap dipertahankan sebagai fallback/log)
   for (const reveal of reveals) {
     if (!reveal.actorId) continue;
-    try {
-      const seerMember = await guild.members.fetch(reveal.actorId);
-      const targetMember = await guild.members.fetch(reveal.targetId).catch(() => null);
-      const targetName = targetMember?.displayName ?? `User ${reveal.targetId.slice(-4)}`;
-      const revealedRole = getRole(reveal.meta.revealedRole);
-
-      await seerMember.send({
-        embeds: [{
-          color: reveal.meta.revealedTeam === 'werewolf' ? 0xe74c3c : 0x2ecc71,
-          title: '🔮 Hasil Terawang',
-          description: `Kamu menerawang **${targetName}**...\n\n` +
-            `${revealedRole?.emoji ?? '❓'} Role: **${revealedRole?.displayName ?? reveal.meta.revealedRole}**\n` +
-            `Tim: **${reveal.meta.revealedTeam === 'werewolf' ? '🐺 Werewolf' : '🏘️ Village'}**`,
-          footer: { text: 'Informasi ini hanya kamu yang tahu. Gunakan dengan bijak.' },
-          timestamp: new Date().toISOString(),
-        }],
-      });
-    } catch (err) {
-      console.error(`[Engine] Gagal kirim reveal ke Seer ${reveal.actorId}:`, err.message);
-    }
+    console.log(`[Engine] Seer reveal: ${reveal.actorId} → ${reveal.targetId} (${reveal.meta.revealedRole})`);
   }
 
-  // 5. Transisi ke siang
+  // 6. Transisi ke siang
   await startDayPhase(client, killed, blocked);
 }
 
@@ -235,8 +251,13 @@ async function resolveDawn(client) {
  */
 export async function startDayPhase(client, killedIds = [], blockedIds = []) {
   gameState.phase = 'day';
+  gameState.skip_votes = [];
   const guild = client.guilds.cache.get(gameState.guild_id);
   if (!guild) return;
+
+  // Ambil timer dari config
+  const timers = await getTimerConfig(gameState.guild_id);
+  const DAY_DISCUSSION = timers.dayDiscussion;
 
   console.log(`[Engine] ──── DAY ${gameState.day_count} ────`);
 
@@ -287,16 +308,19 @@ export async function startDayPhase(client, killedIds = [], blockedIds = []) {
         timestamp: new Date().toISOString(),
       }],
     });
+
+    // 4. Kirim zona clue
+    await sendZoneClues(guild, globalChat, killedIds);
   }
 
-  // 4. Cek win condition setelah kill malam
+  // 5. Cek win condition setelah kill malam
   const winResult = checkWinCondition();
   if (winResult) {
     await endGame(client, winResult);
     return;
   }
 
-  // 5. Timer diskusi → setelah selesai, mulai voting
+  // 6. Timer diskusi → setelah selesai, mulai voting
   clearTimeout(dayTimer);
   dayTimer = setTimeout(async () => {
     console.log('[Engine] Discussion timer expired — starting lynch vote.');
@@ -319,6 +343,80 @@ export async function startDayPhase(client, killedIds = [], blockedIds = []) {
   console.log(`[Engine] Day phase started. Discussion timer: ${DAY_DISCUSSION / 1000}s`);
 }
 
+/**
+ * Kirim zone clue setelah pengumuman fajar.
+ * - Zona yang diserang: clue langsung diumumkan
+ * - Zona aman: tombol Reveal ephemeral
+ */
+async function sendZoneClues(guild, globalChat, killedIds) {
+  const allClues = getAllClues();
+
+  for (const [zoneId, clue] of allClues) {
+    if (clue.isAttacked) {
+      // Zona diserang → pengumuman publik
+      await globalChat.send({
+        embeds: [{
+          color: 0xe74c3c,
+          title: `⚠️ ${clue.zoneEmoji} ${clue.zoneName} — Zona Serangan!`,
+          description: `Terjadi serangan di **${clue.zoneName}** semalam!\n\n${formatClueText(clue)}`,
+          footer: { text: 'Salah satu jejak misterius itu milik sang predator...' },
+          timestamp: new Date().toISOString(),
+        }],
+      });
+    } else {
+      // Zona aman → tombol Reveal
+      if (clue.playersInZone.length === 0) continue; // skip zona kosong
+
+      const revealButton = new ButtonBuilder()
+        .setCustomId(`zone:reveal:${zoneId}`)
+        .setLabel(`${clue.zoneEmoji} Lihat Clue ${clue.zoneName}`)
+        .setStyle(ButtonStyle.Secondary);
+      const row = new ActionRowBuilder().addComponents(revealButton);
+
+      await globalChat.send({
+        embeds: [{
+          color: 0x3498db,
+          title: `${clue.zoneEmoji} ${clue.zoneName} — Zona Aman`,
+          description: `Tidak ada serangan di **${clue.zoneName}**.` +
+            `\nTerdeteksi **${clue.footprintCount}** jejak kaki.` +
+            '\n\nKlik tombol di bawah untuk melihat detil clue.',
+        }],
+        components: [row],
+      });
+    }
+  }
+}
+
+/**
+ * Lewati fase diskusi siang dan langsung mulai voting.
+ * Dipanggil oleh command /vote.
+ * @param {import('discord.js').Client} client 
+ */
+export async function skipDayDiscussion(client) {
+  if (gameState.phase !== 'day') return;
+  
+  clearTimeout(dayTimer);
+  dayTimer = null;
+  console.log('[Engine] Discussion skipped by user — starting lynch vote.');
+
+  const guild = client.guilds.cache.get(gameState.guild_id);
+  if (!guild) return;
+
+  const globalChat = guild.channels.cache.get(gameState.channels.global_chat);
+  if (globalChat) {
+    await globalChat.send({
+      embeds: [{
+        color: 0xe67e22,
+        title: '⚖️ Waktu Diskusi Dipercepat!',
+        description: 'Seseorang telah mempercepat waktu diskusi!\nSaatnya menentukan nasib. Siapa yang paling mencurigakan?\n\nGunakan dropdown di bawah untuk memberikan suara.',
+        timestamp: new Date().toISOString(),
+      }],
+    });
+  }
+
+  await startLynchVote(client);
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 //  GAME END
 // ══════════════════════════════════════════════════════════════════════════════
@@ -338,9 +436,29 @@ export async function endGame(client, winResult) {
 
   console.log(`[Engine] ──── GAME OVER: ${winResult.winner} WIN ────`);
 
-  // Unmute semua
-  await muteAllPlayers(guild, false);
+  // Unmute semua orang di Voice Channel (force unmute)
+  const voiceChannelId = gameState.channels.voice_lobby;
+  if (voiceChannelId) {
+    const vc = guild.channels.cache.get(voiceChannelId);
+    if (vc) {
+      for (const [, member] of vc.members) {
+        if (!member.user.bot) {
+          await member.voice.setMute(false, 'Game ended').catch(() => null);
+        }
+      }
+    }
+  }
+
   await lockGlobalChat(guild, false);
+
+  // Cleanup server roles
+  const guildCfg = await getGuildConfig(gameState.guild_id);
+  for (const [userId] of Object.entries(gameState.players)) {
+    await clearServerRoles(guild, guildCfg, userId);
+  }
+
+  // Cleanup zone state
+  resetZones();
 
   const globalChat = guild.channels.cache.get(gameState.channels.global_chat);
   if (!globalChat) return;
@@ -380,9 +498,16 @@ export async function endGame(client, winResult) {
       const categoryId = gameState.channels.category_id;
       const { resetGame } = await import('../gameState.js');
 
-      const childChannels = guild.channels.cache.filter(c => c.parentId === categoryId);
-      for (const [, c] of childChannels) await c.delete('Auto purge after game end').catch(() => null);
-      await guild.channels.cache.get(categoryId)?.delete('Auto purge after game end').catch(() => null);
+      const gameChannelIds = [
+        gameState.channels.global_chat,
+        gameState.channels.ww_chat,
+        gameState.channels.graveyard,
+      ];
+      for (const id of gameChannelIds) {
+        if (!id) continue;
+        const ch = guild.channels.cache.get(id);
+        if (ch) await ch.delete('Auto purge after game end').catch(() => null);
+      }
 
       resetGame();
       console.log(`[Engine] Auto-purged game channels for guild ${guild.id}`);
@@ -400,6 +525,10 @@ export async function endGame(client, winResult) {
  * @param {import('discord.js').Client} client
  */
 export async function afterLynch(client) {
+  // Update server roles for lynched player
+  const guildCfg = await getGuildConfig(gameState.guild_id);
+  const guild = client.guilds.cache.get(gameState.guild_id);
+
   // Cek win condition
   const winResult = checkWinCondition();
   if (winResult) {
@@ -526,6 +655,47 @@ async function updateDeadPlayerPermissions(guild, userId) {
     console.error(`[Engine] Error updating dead player permissions for ${userId}:`, err.message);
   }
 }
+
+/**
+ * Update server roles (alive/dead) untuk seorang pemain.
+ */
+async function updateServerRoles(guild, guildCfg, userId, newStatus) {
+  if (!guildCfg?.alive_role_id || !guildCfg?.dead_role_id) return;
+
+  try {
+    const member = await guild.members.fetch(userId).catch(() => null);
+    if (!member) return;
+
+    if (newStatus === 'dead') {
+      await member.roles.remove(guildCfg.alive_role_id, 'Player died').catch(() => null);
+      await member.roles.add(guildCfg.dead_role_id, 'Player died').catch(() => null);
+    } else if (newStatus === 'alive') {
+      await member.roles.add(guildCfg.alive_role_id, 'Game start').catch(() => null);
+      await member.roles.remove(guildCfg.dead_role_id, 'Game start').catch(() => null);
+    }
+  } catch (err) {
+    console.error(`[Engine] Error updating server roles for ${userId}:`, err.message);
+  }
+}
+
+/**
+ * Clear server roles (dipanggil saat game berakhir).
+ */
+async function clearServerRoles(guild, guildCfg, userId) {
+  if (!guildCfg?.alive_role_id || !guildCfg?.dead_role_id) return;
+
+  try {
+    const member = await guild.members.fetch(userId).catch(() => null);
+    if (!member) return;
+    await member.roles.remove(guildCfg.alive_role_id, 'Game ended').catch(() => null);
+    await member.roles.remove(guildCfg.dead_role_id, 'Game ended').catch(() => null);
+  } catch (err) {
+    console.error(`[Engine] Error clearing server roles for ${userId}:`, err.message);
+  }
+}
+
+// Exported for use in start.js
+export { updateServerRoles, clearServerRoles };
 
 /**
  * Cleanup timers (dipanggil saat /stop).

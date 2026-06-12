@@ -8,6 +8,9 @@
  * Saat game dimulai:
  *  1. Buat Category + Channels sementara (global-chat, werewolf-pact, graveyard, voice)
  *  2. Aktifkan gameState
+ *  3. Assign alive roles
+ *  4. Reveal role via ephemeral button (bukan DM)
+ *  5. Anti-cheat: prevent threads in game channels
  */
 
 import {
@@ -21,7 +24,7 @@ import { requireSetupCmd } from '../utils/channelGuard.js';
 
 // ── Role System & Engine ─────────────────────────────────────────────────────
 import { getRole } from '../roles/index.js';
-import { startNightPhase } from '../engine/phaseEngine.js';
+import { startNightPhase, updateServerRoles } from '../engine/phaseEngine.js';
 
 export const data = new SlashCommandBuilder()
   .setName('start')
@@ -47,9 +50,11 @@ export async function execute(interaction) {
 
   // ── User harus di VC ──────────────────────────────────────────────────────
   const vc = member.voice?.channel;
-  if (!vc) {
+  const guildCfg = await getGuildConfig(guild.id);
+  
+  if (!vc || vc.id !== guildCfg.town_square_id) {
     return interaction.reply({
-      content: '🎤 Kamu harus berada di Voice Channel untuk menggunakan perintah ini.',
+      content: `🎤 Kamu harus berada di Voice Channel <#${guildCfg.town_square_id}> untuk menggunakan perintah ini.`,
       ephemeral: true,
     });
   }
@@ -81,7 +86,6 @@ export async function execute(interaction) {
 
   // Inisiasi vote baru
   const needed  = Math.ceil(vcMembers.length * 0.6);
-  const guildCfg = await getGuildConfig(guild.id);
   const setupCh  = guild.channels.cache.get(guildCfg?.setup_cmd_id);
 
   const voteEmbed = buildVoteEmbed('start', interaction.user, 1, needed, vcMembers.length);
@@ -112,6 +116,7 @@ export async function execute(interaction) {
 /** Buat dan aktifkan game secara penuh. */
 export async function launchGame(interaction, guild, vcMembers) {
   const everyoneRole = guild.roles.everyone;
+  const guildCfg = await getGuildConfig(guild.id);
 
   try {
     gameState.phase = 'init';
@@ -130,7 +135,6 @@ export async function launchGame(interaction, guild, vcMembers) {
     }
 
     // ── Ambil kategori & VC permanen dari server config ────────────────────
-    const guildCfg = await getGuildConfig(guild.id);
     const categoryId = guildCfg?.setup_category_id;
     const voiceLobbyId = guildCfg?.town_square_id;
 
@@ -139,12 +143,21 @@ export async function launchGame(interaction, guild, vcMembers) {
       return interaction.editReply('❌ Kategori Werewolf tidak ditemukan. Jalankan `/setup-werewolf` ulang.');
     }
 
+    // ── Anti-cheat: deny thread creation permissions ──────────────────────
+    const antiThreadPerms = [
+      PermissionFlagsBits.CreatePublicThreads,
+      PermissionFlagsBits.CreatePrivateThreads,
+    ];
+
+    // Determine member role for permissions
+    const memberRoleId = guildCfg?.bot_config?.member_role_id ?? everyoneRole.id;
+
     // ── Buat 3 channel game sementara di dalam kategori permanen ───────────
     const globalChat = await guild.channels.create({
       name: 'global-chat', type: ChannelType.GuildText, parent: categoryId,
       topic: '💬 Diskusi umum. Aktif saat Fase Siang.',
       permissionOverwrites: [
-        { id: everyoneRole.id, allow: [PermissionFlagsBits.ViewChannel], deny: [PermissionFlagsBits.SendMessages, PermissionFlagsBits.AttachFiles] },
+        { id: everyoneRole.id, allow: [PermissionFlagsBits.ViewChannel], deny: [PermissionFlagsBits.SendMessages, PermissionFlagsBits.AttachFiles, ...antiThreadPerms] },
         { id: guild.client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks] },
       ],
     });
@@ -153,7 +166,7 @@ export async function launchGame(interaction, guild, vcMembers) {
       name: 'werewolf-pact', type: ChannelType.GuildText, parent: categoryId,
       topic: '🩸 Saluran rahasia para Werewolf.',
       permissionOverwrites: [
-        { id: everyoneRole.id, deny: [PermissionFlagsBits.ViewChannel] },
+        { id: everyoneRole.id, deny: [PermissionFlagsBits.ViewChannel, ...antiThreadPerms] },
         { id: guild.client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks] },
       ],
     });
@@ -162,7 +175,7 @@ export async function launchGame(interaction, guild, vcMembers) {
       name: 'graveyard', type: ChannelType.GuildText, parent: categoryId,
       topic: '⚰️ Khusus jiwa yang telah gugur.',
       permissionOverwrites: [
-        { id: everyoneRole.id, deny: [PermissionFlagsBits.ViewChannel] },
+        { id: everyoneRole.id, deny: [PermissionFlagsBits.ViewChannel, ...antiThreadPerms] },
         { id: guild.client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks] },
       ],
     });
@@ -179,6 +192,10 @@ export async function launchGame(interaction, guild, vcMembers) {
     // ── Aktifkan game ─────────────────────────────────────────────────────
     activateGame();
     clearVote();
+
+    // Store alive/dead role IDs in gameState
+    gameState.server_roles.alive_role_id = guildCfg?.alive_role_id ?? null;
+    gameState.server_roles.dead_role_id = guildCfg?.dead_role_id ?? null;
 
     // ── Distribusi role secara acak ──────────────────────────────────────
     const shuffled = [...vcMembers].sort(() => Math.random() - 0.5);
@@ -199,35 +216,27 @@ export async function launchGame(interaction, guild, vcMembers) {
       idx++;
     }
 
-    // ── Kirim DM role ke setiap pemain ──────────────────────────────────
+    // ── Assign "alive" server role & remove "dead" ──────────────────────
     for (const member of vcMembers) {
-      const playerData = gameState.players[member.id];
-      const roleDef    = getRole(playerData.role);
-      try {
-        await member.send({
-          embeds: [{
-            color       : playerData.role === 'werewolf' ? 0x8b0000 : 0x2ecc71,
-            title       : `${roleDef?.emoji ?? '❓'} Peran Kamu: ${roleDef?.displayName ?? playerData.role}`,
-            description : `**Tim:** ${roleDef?.team === 'werewolf' ? '🐺 Werewolf' : '🏘️ Village'}\n` +
-                          `**Tujuan:** ${roleDef?.winCondition ?? '-'}`,
-            footer      : { text: 'Jangan beritahu siapapun peranmu! 🤫' },
-            timestamp   : new Date().toISOString(),
-          }],
-        });
-      } catch (err) {
-        console.warn(`[/start] Gagal DM ke ${member.user.tag}: ${err.message}`);
-      }
+      await updateServerRoles(guild, guildCfg, member.id, 'alive');
     }
 
-    // ── Pengumuman di #global-chat ─────────────────────────────────────────
+    // ── Kirim reveal role button (bukan DM) ─────────────────────────────
+    const revealButton = new ButtonBuilder()
+      .setCustomId('game:reveal_role')
+      .setLabel('🎭 Lihat Peranmu')
+      .setStyle(ButtonStyle.Primary);
+    const revealRow = new ActionRowBuilder().addComponents(revealButton);
+
     await globalChat.send({
       embeds: [{
         color       : 0x8b0000,
         title       : '🌙 Malam Pertama Telah Tiba...',
-        description : `Permainan dimulai dengan **${count} pemain**.\nDistribusi peran:\n🐺 ${roles.werewolves} Werewolf | 🔮 ${roles.seers} Seer | 👨‍🌾 ${roles.villagers} Villager\n\nSetiap pemain telah menerima peran via DM.`,
-        footer      : { text: 'Fase malam dimulai...' },
+        description : `Permainan dimulai dengan **${count} pemain**.\nDistribusi peran:\n🐺 ${roles.werewolves} Werewolf | 🔮 ${roles.seers} Seer | 👨‍🌾 ${roles.villagers} Villager\n\nTekan tombol di bawah untuk melihat peran kamu!`,
+        footer      : { text: 'Tombol ini bisa ditekan berkali-kali.' },
         timestamp   : new Date().toISOString(),
       }],
+      components: [revealRow],
     });
 
     await interaction.editReply(

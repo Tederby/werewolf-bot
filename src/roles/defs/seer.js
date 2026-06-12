@@ -3,7 +3,7 @@
  *
  * Aksi malam: Menerawang satu pemain untuk melihat role-nya.
  * UI: Ephemeral dropdown di #global-chat (via tombol generic "Gunakan Kemampuan").
- * Resolve: Hasil terawang dikirim via DM setelah fajar.
+ * Resolve: Hasil terawang langsung dikirim secara EPHEMERAL saat memilih (bukan saat fajar).
  * Tim: Village
  * Win Condition: Semua Werewolf tereliminasi.
  *
@@ -12,7 +12,7 @@
  * karena semua aksi di-resolve secara bersamaan.
  */
 
-import { registerRole } from '../roleRegistry.js';
+import { registerRole, getRole } from '../roleRegistry.js';
 import { gameState, getAlivePlayers } from '../../gameState.js';
 import {
   StringSelectMenuBuilder, ActionRowBuilder,
@@ -26,6 +26,7 @@ registerRole({
   winCondition : 'Semua Werewolf berhasil dieliminasi.',
   hasNightAction: true,
   priority     : 50, // Resolve sebelum WW kill
+  rolePoints   : 4,  // Sistem Role Point (positif = membantu village)
 
   // Seer TIDAK pakai sendActionUI (tidak kirim ke channel sendiri).
   // Sebaliknya, pakai buildActionComponents yang dikirim secara ephemeral
@@ -69,7 +70,7 @@ registerRole({
         color       : 0x9b59b6,
         title       : `🔮 Malam Hari ${gameState.day_count} — Waktunya Menerawang`,
         description : 'Pilih satu pemain untuk diterawang.\n\n⏱️ Kamu punya waktu terbatas. Jika tidak memilih, kamu melewatkan giliran.',
-        footer      : { text: 'Hanya kamu yang melihat pesan ini. Hasil dikirim setelah fajar.' },
+        footer      : { text: 'Hanya kamu yang melihat pesan ini. Hasil langsung diberitahu!' },
         timestamp   : new Date().toISOString(),
       }],
       components: [row],
@@ -107,3 +108,37 @@ registerRole({
     }];
   },
 });
+
+/**
+ * Build ephemeral reveal result for Seer.
+ * Called immediately when Seer selects a target.
+ * @param {string} targetId
+ * @returns {{ embeds: Object[] }}
+ */
+export function buildSeerRevealResult(targetId) {
+  const targetData = gameState.players[targetId];
+  if (!targetData) {
+    return {
+      embeds: [{
+        color: 0xe74c3c,
+        title: '🔮 Hasil Terawang',
+        description: 'Target tidak ditemukan.',
+      }],
+    };
+  }
+
+  const roleDef = getRole(targetData.role);
+  const isWW = targetData.role === 'werewolf';
+
+  return {
+    embeds: [{
+      color: isWW ? 0xe74c3c : 0x2ecc71,
+      title: '🔮 Hasil Terawang',
+      description: `Kamu menerawang <@${targetId}>...\n\n` +
+        `${roleDef?.emoji ?? '❓'} Role: **${roleDef?.displayName ?? targetData.role}**\n` +
+        `Tim: **${isWW ? '🐺 Werewolf' : '🏘️ Village'}**`,
+      footer: { text: 'Informasi ini hanya kamu yang tahu. Gunakan dengan bijak.' },
+      timestamp: new Date().toISOString(),
+    }],
+  };
+}

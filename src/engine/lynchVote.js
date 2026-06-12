@@ -11,14 +11,14 @@ import {
 } from 'discord.js';
 import { gameState, getAlivePlayers, setPlayer } from '../gameState.js';
 import { afterLynch } from './phaseEngine.js';
+import { getTimerConfig } from '../utils/configHelper.js';
+import { getGuildConfig } from '../utils/serverConfig.js';
 
 /** @type {Map<string, string>} Map<voterId, targetId> */
 const lynchVotes = new Map();
 
 /** @type {NodeJS.Timeout|null} */
 let voteTimer = null;
-
-const VOTE_DURATION = 60_000; // 60 detik untuk voting
 
 /**
  * Mulai voting lynch di #global-chat.
@@ -28,6 +28,10 @@ export async function startLynchVote(client) {
   lynchVotes.clear();
   const guild = client.guilds.cache.get(gameState.guild_id);
   if (!guild) return;
+
+  // Ambil timer dari config
+  const timers = await getTimerConfig(gameState.guild_id);
+  const VOTE_DURATION = timers.voteDuration;
 
   const globalChat = guild.channels.cache.get(gameState.channels.global_chat);
   if (!globalChat) return;
@@ -181,6 +185,11 @@ async function tallyVotes(client) {
 
   // Update permissions
   await updateLynchedPlayerPermissions(guild, executedId);
+
+  // Update server roles
+  const guildCfg = await getGuildConfig(gameState.guild_id);
+  const { updateServerRoles } = await import('./phaseEngine.js');
+  await updateServerRoles(guild, guildCfg, executedId, 'dead');
 
   if (globalChat) {
     const member = await guild.members.fetch(executedId).catch(() => null);
